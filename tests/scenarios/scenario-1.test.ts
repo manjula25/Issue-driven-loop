@@ -37,6 +37,10 @@ afterEach(() => {
   }
 });
 
+/** An event-loop-friendly sleep — the killed-run poll must yield (see there). */
+const sleep = (ms: number): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 function openGuard(): void {
   acquireFixtureGuard();
   guardHeld = true;
@@ -268,7 +272,10 @@ describe("scenario 1 — reproduce-then-fix, end to end (WI-16 T4)", () => {
     }
   }, 1_200_000);
 
-  it("a run killed mid-flight leaves a branch and an open PR; the next run still converges", () => {
+  it("a run killed mid-flight leaves a branch and an open PR; the next run still converges", async () => {
+    // Timeout note: measured 1035s on the first green (reset, a run killed at
+    // the open-PR point, aftermath reads, a second reset on the real mess, a
+    // full rerun). The 1800s bound is ~1.7x the measurement.
     // Completes FR-004 (the reset is proven on a mess a REAL run made, not a
     // hand-mutation) and repeats FR-010 (both runs execute inside one held
     // guard — the killed run cannot race a sibling into the fixture).
@@ -317,7 +324,10 @@ describe("scenario 1 — reproduce-then-fix, end to end (WI-16 T4)", () => {
     // creation and the squash-merge POST (~16s) sits the review pass, so a
     // ~2s poll lands the kill inside that window. If it ever lands late the
     // aftermath assertion below fails LOUDLY (merged, not open) — a visible
-    // flake naming itself, never a silent wrong pass.
+    // flake naming itself, never a silent wrong pass. The poll loop MUST
+    // await its sleep (never Atomics.wait): the child's exit event and the
+    // stdout/stderr drains only run when the event loop is free, and a
+    // blocked loop is exactly how a healthy kill reads as signalCode null.
     const deadline = Date.now() + 900_000;
     let prNumber: number | undefined;
     for (;;) {
@@ -341,14 +351,25 @@ describe("scenario 1 — reproduce-then-fix, end to end (WI-16 T4)", () => {
         prNumber = open[0]!.number;
         break;
       }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2_000);
+      await sleep(2_000);
     }
     process.kill(-child.pid!, "SIGKILL");
-    // Wait for the group leader to register its death — the assertion is on
-    // the SIGNAL, the positive evidence that the kill landed, not on absence.
-    for (let i = 0; i < 50 && child.exitCode === null && child.signalCode === null; i++) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
-    }
+    // Await the group leader's death — the assertion is on the SIGNAL, the
+    // positive evidence that the kill landed, not on absence. A child that
+    // somehow survives SIGKILL for 10s fails loudly here.
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        resolve();
+      } else {
+        child.once("exit", () => resolve());
+      }
+    });
+    await Promise.race([
+      exited,
+      sleep(10_000).then(() => {
+        throw new Error("the killed run did not exit within 10s of SIGKILL");
+      }),
+    ]);
     expect(child.signalCode).toBe("SIGKILL");
     child.stdout?.destroy();
     child.stderr?.destroy();
