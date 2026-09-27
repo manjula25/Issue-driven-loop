@@ -40,7 +40,12 @@ function openGuard(): void {
   guardHeld = true;
 }
 
-/** The four properties of a clean fixture (FR-004), as callable assertions. */
+/**
+ * The properties of a clean fixture (FR-004, converged semantics — T4 D1), as
+ * callable assertions. Sha equality is gone on purpose: a scenario run that
+ * merges a real fix can never put main back at the seed commit without
+ * rewriting history, and rewriting history is what the reset must not do.
+ */
 function expectFixtureClean(): void {
   const heads = execFileSync("git", ["ls-remote", "--heads", "origin"], {
     cwd: FIXTURE_CLONE_DIR,
@@ -59,19 +64,33 @@ function expectFixtureClean(): void {
   );
   expect(JSON.parse(prs)).toEqual([]);
 
-  const remoteMain = execFileSync("git", ["ls-remote", "origin", "refs/heads/main"], {
+  // TREE equality with the seed (the seeded bug is back, no debris) — not sha
+  // equality. `git diff --name-only` lists differing paths, so empty is equal.
+  const treeDiff = execFileSync("git", ["diff", "--name-only", SEED_COMMIT, "origin/main"], {
     cwd: FIXTURE_CLONE_DIR,
     encoding: "utf8",
-  })
-    .split("\t")[0]
-    ?.trim();
-  expect(remoteMain).toBe(SEED_COMMIT);
+  });
+  expect(treeDiff.trim()).toBe("");
 
+  // Issue #1 is open again — issue state is part of the reset (T3's D6,
+  // answered by T4's D1: a merged fix closes it, the reset reopens it).
+  const issue = JSON.parse(
+    execFileSync("gh", ["issue", "view", "1", "--repo", FIXTURE_REPO, "--json", "state"], {
+      encoding: "utf8",
+    }),
+  ) as { state: string };
+  expect(issue.state).toBe("OPEN");
+
+  // The local clone matches the remote it tracks, and is clean.
   const localHead = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: FIXTURE_CLONE_DIR,
     encoding: "utf8",
   }).trim();
-  expect(localHead).toBe(SEED_COMMIT);
+  const remoteHead = execFileSync("git", ["rev-parse", "origin/main"], {
+    cwd: FIXTURE_CLONE_DIR,
+    encoding: "utf8",
+  }).trim();
+  expect(localHead).toBe(remoteHead);
   const status = execFileSync("git", ["status", "--porcelain"], {
     cwd: FIXTURE_CLONE_DIR,
     encoding: "utf8",
@@ -80,7 +99,7 @@ function expectFixtureClean(): void {
 }
 
 describe("the scenarios command (WI-16 T3)", () => {
-  it("resets a hand-mutated fixture: branch gone, PR closed, base at the seed", () => {
+  it("resets a hand-mutated fixture: branch gone, PR closed, tree converged, history kept", () => {
     // Owns a 480s timeout like the invocation test below: it performs TWO
     // resets (the self-healing start plus the reset under test) and a
     // three-part mess, and each gh API POST costs ~16s from this network.
@@ -93,12 +112,13 @@ describe("the scenarios command (WI-16 T3)", () => {
     // leftover branch would be rejected non-fast-forward before the reset
     // under test ever runs.
     resetFixture();
+    let preResetMain = "";
 
     // The hand-made mess: a scratch branch with a junk commit, pushed, with an
     // open PR from it — AND main itself advanced by a junk commit, which is
-    // what a killed post-merge run leaves behind (the shape the force-push
-    // exists for). Authorized by the fixture's purpose (FR-004). The clone is
-    // from the fixture's REAL remote (GitHub), not the local clone dir —
+    // what a killed post-merge run leaves behind (the shape the convergence
+    // commit exists for). Authorized by the fixture's purpose (FR-004). The
+    // clone is from the fixture's REAL remote (GitHub), not the local clone dir —
     // pushing to a path remote would never reach the PR assertion's subject.
     const remoteUrl = execFileSync("git", ["remote", "get-url", "origin"], {
       cwd: FIXTURE_CLONE_DIR,
@@ -143,12 +163,30 @@ describe("the scenarios command (WI-16 T3)", () => {
         { cwd: scratch },
       );
       execFileSync("git", ["push", "-q", "origin", "main"], { cwd: scratch });
+      // What the reset must NOT discard: the identity of main as the mess left
+      // it. A force-push back to the seed would strand every future merged fix
+      // as permanently skippedMerged (the revert-guard subjects would be
+      // erased with the history), so the reset converges instead — and
+      // converging means this commit is still an ancestor afterwards.
+      preResetMain = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: scratch,
+        encoding: "utf8",
+      }).trim();
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }
 
     resetFixture();
     expectFixtureClean();
+
+    // Never rewritten (T4 D1): the mess's main is still in main's history —
+    // the reset absorbed it, it did not erase it.
+    const ancestor = spawnSync(
+      "git",
+      ["merge-base", "--is-ancestor", preResetMain, "origin/main"],
+      { cwd: FIXTURE_CLONE_DIR, encoding: "utf8" },
+    );
+    expect(ancestor.status).toBe(0);
   }, 480_000);
 
   it("smallest real invocation: the loop finds no eligible issue and the fixture is unchanged", () => {

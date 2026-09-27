@@ -3,7 +3,7 @@
  * definition (SEED_COMMIT), the precondition check, the concurrency guard, the
  * reset, and the empty-queue label. Nothing here touches `src/` (FR-003).
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +20,19 @@ export const EMPTY_QUEUE_LABEL = "scenarios-empty-queue";
 
 /** The guard's lock directory, shared by every process running scenarios. */
 export const GUARD_DIR = join(tmpdir(), "loop-integration-fixture.guard");
+
+/**
+ * The `-c user.name/-c user.email` prefix for commits the reset itself makes
+ * (the convergence commit, the revert markers) — the same loop identity
+ * `docs/agents/workflow.md` reserves for machine commits in target repos, so
+ * reset commits stay distinguishable from human ones.
+ */
+const LOOP_IDENTITY = [
+  "-c",
+  "user.name=software-factory-loop",
+  "-c",
+  "user.email=manjula25+loop@users.noreply.github.com",
+] as const;
 
 /** A machinery step that cannot complete is loud, never silent. */
 export class FixtureResetError extends Error {
@@ -158,11 +171,17 @@ export function releaseFixtureGuard(): void {
 }
 
 /**
- * FR-004's reset: whatever a previous (possibly killed) run left behind, the
- * fixture afterwards has exactly four properties — origin's only branch is
- * `main`, no open PR, origin/main sits at SEED_COMMIT, and the local clone is
- * clean at the same commit. Issues and labels are NOT reset (D6 — reopened
- * for T4).
+ * FR-004's reset, converged semantics (T4 D1): whatever a previous (possibly
+ * killed, possibly SUCCESSFUL — a merged fix changes main too) run left
+ * behind, the fixture afterwards has exactly these properties — origin's only
+ * branch is `main`, no open PR, origin/main's TREE equals the seed's (the
+ * seeded bug is back, no debris), every closed issue is reopened, and the
+ * local clone is clean at the same commit. History is NEVER rewritten: main is
+ * converged by ADDING a commit whose tree is the seed's, plus empty
+ * `Revert "…" (#N)` marker commits for merged PRs — the subject shape
+ * `mainRevertsPr` reads, which is what keeps a once-merged issue re-eligible
+ * for the next scenario run. A force-push back to the seed would erase those
+ * revert subjects and strand every merged issue as permanently skippedMerged.
  */
 export function resetFixture(): void {
   // 1. Close every open PR (a branch carrying an open PR is not deletable
@@ -198,25 +217,110 @@ export function resetFixture(): void {
     }
   }
 
-  // 3. Put origin/main back at the seed, from a local tree that is clean and
-  //    on main at the same commit — a killed run may have left detached HEADs,
-  //    staged files, or untracked debris, so none of that is trusted.
+  // 3. Rebuild local main on top of what the remote actually has — a killed
+  //    run may have left detached HEADs, staged files, or untracked debris, so
+  //    none of that is trusted. The local clone is disposable; only the REMOTE
+  //    is never rewritten.
   run("fetch origin", "git", ["fetch", "--prune", "origin"], undefined, {
     cwd: FIXTURE_CLONE_DIR,
   });
   run("verify seed commit exists", "git", ["cat-file", "-e", `${SEED_COMMIT}^{commit}`], undefined, {
     cwd: FIXTURE_CLONE_DIR,
   });
-  run("recreate local main at seed", "git", ["checkout", "-q", "-B", "main", SEED_COMMIT], undefined, {
+  run("recreate local main at origin/main", "git", ["checkout", "-q", "-B", "main", "origin/main"], undefined, {
     cwd: FIXTURE_CLONE_DIR,
   });
   run("discard untracked debris", "git", ["clean", "-fdq"], undefined, { cwd: FIXTURE_CLONE_DIR });
-  run("force-push main to seed", "git", ["push", "--force", "origin", "main:main"], undefined, {
+
+  // 4. Converge the TREE to the seed — one added commit, no history rewrite.
+  //    `git diff --name-only` listing nothing means the trees already match.
+  //    Order matters: convergence BEFORE the revert markers below, or the
+  //    convergence commit would undo them.
+  const treeDiff = run("compare tree with seed", "git", ["diff", "--name-only", SEED_COMMIT, "main"], undefined, {
     cwd: FIXTURE_CLONE_DIR,
   });
+  if (treeDiff.trim() !== "") {
+    run("clear tracked paths", "git", ["rm", "-rq", "."], undefined, { cwd: FIXTURE_CLONE_DIR });
+    run("restore seed tree", "git", ["checkout", SEED_COMMIT, "--", "."], undefined, {
+      cwd: FIXTURE_CLONE_DIR,
+    });
+    run("commit convergence", "git", [
+      ...LOOP_IDENTITY,
+      "commit",
+      "-m",
+      "scenarios: converge fixture tree to seed",
+    ], undefined, { cwd: FIXTURE_CLONE_DIR });
+  }
 
-  // 4. Verify the four properties — a reset that claims success without
-  //    checking them is a standing claim nobody can trust.
+  // 5. Revert markers for every merged PR without a `Revert "…(#N)"` subject
+  //    on main — empty commits (the tree already converged in step 4) whose
+  //    subjects are exactly what `mainRevertsPr` reads. Created for ALL merged
+  //    PRs, because `splitQueue` consults the marker only for the FIRST PR it
+  //    finds covering an issue, and which one that is changes run to run. A
+  //    real revert subject (a canary-red auto-revert that survived) already
+  //    satisfies the guard — no marker is duplicated for it.
+  const mergedPrs = JSON.parse(
+    run("list merged PRs", "gh", [
+      "pr",
+      "list",
+      "--repo",
+      FIXTURE_REPO,
+      "--state",
+      "merged",
+      "--limit",
+      "100",
+      "--json",
+      "number,title",
+    ]) || "[]",
+  ) as Array<{ number: number; title: string }>;
+  if (mergedPrs.length > 0) {
+    const subjects = run("read main subjects", "git", ["log", "--format=%s", "main"], undefined, {
+      cwd: FIXTURE_CLONE_DIR,
+    })
+      .split("\n")
+      .filter((line) => line !== "");
+    for (const pr of mergedPrs) {
+      const tag = `(#${pr.number})`;
+      const alreadyReverted = subjects.some(
+        (s) => s.startsWith('Revert "') && s.includes(tag),
+      );
+      if (!alreadyReverted) {
+        run("commit revert marker", "git", [
+          ...LOOP_IDENTITY,
+          "commit",
+          "--allow-empty",
+          "-m",
+          `Revert "${pr.title} ${tag}"`,
+        ], undefined, { cwd: FIXTURE_CLONE_DIR });
+      }
+    }
+  }
+
+  // 6. A plain push — main only ever grows, so this is always a fast-forward.
+  run("push main", "git", ["push", "origin", "main"], undefined, { cwd: FIXTURE_CLONE_DIR });
+
+  // 7. Reopen every closed issue (T3's D6, answered: issue state IS part of
+  //    the reset — the fixture exists to be mutated and holds only the issues
+  //    scenarios create, and a merged fix closing an issue is exactly the
+  //    state the next reset undoes).
+  const closedIssues = JSON.parse(
+    run("list closed issues", "gh", [
+      "issue",
+      "list",
+      "--repo",
+      FIXTURE_REPO,
+      "--state",
+      "closed",
+      "--json",
+      "number",
+    ]) || "[]",
+  ) as Array<{ number: number }>;
+  for (const issue of closedIssues) {
+    run("reopen issue", "gh", ["issue", "reopen", String(issue.number), "--repo", FIXTURE_REPO]);
+  }
+
+  // 8. Verify the properties — a reset that claims success without checking
+  //    them is a standing claim nobody can trust.
   const remaining = run("verify remote heads", "git", ["ls-remote", "--heads", "origin"], undefined, {
     cwd: FIXTURE_CLONE_DIR,
   })
@@ -230,16 +334,50 @@ export function resetFixture(): void {
       `expected only "main", found [${remaining.join(", ")}]`,
     );
   }
-  const remoteMain = run("verify origin/main", "git", ["ls-remote", "origin", "refs/heads/main"], undefined, {
-    cwd: FIXTURE_CLONE_DIR,
-  })
-    .split("\t")[0]
-    ?.trim();
-  if (remoteMain !== SEED_COMMIT) {
+  const openPrsAfter = run("verify no open PRs", "gh", [
+    "pr",
+    "list",
+    "--repo",
+    FIXTURE_REPO,
+    "--state",
+    "open",
+    "--json",
+    "number",
+  ]);
+  if (JSON.parse(openPrsAfter || "[]").length !== 0) {
+    throw new FixtureResetError("verify no open PRs", `open PRs remain: ${openPrsAfter}`);
+  }
+  // Tree equality with the seed — the seeded bug is back and no debris sits on
+  // main. The sha is deliberately NOT checked (D1).
+  if (
+    spawnSync("git", ["diff", "--quiet", SEED_COMMIT, "origin/main"], {
+      cwd: FIXTURE_CLONE_DIR,
+      encoding: "utf8",
+    }).status !== 0
+  ) {
+    const differing = run("list differing paths", "git", [
+      "diff",
+      "--name-only",
+      SEED_COMMIT,
+      "origin/main",
+    ], undefined, { cwd: FIXTURE_CLONE_DIR });
     throw new FixtureResetError(
-      "verify origin/main",
-      `expected ${SEED_COMMIT}, found ${remoteMain ?? "(none)"}`,
+      "verify tree equals seed",
+      `origin/main tree differs from the seed:\n${differing}`,
     );
+  }
+  const stillClosed = run("verify issues reopened", "gh", [
+    "issue",
+    "list",
+    "--repo",
+    FIXTURE_REPO,
+    "--state",
+    "closed",
+    "--json",
+    "number",
+  ]);
+  if (JSON.parse(stillClosed || "[]").length !== 0) {
+    throw new FixtureResetError("verify issues reopened", `closed issues remain: ${stillClosed}`);
   }
   const status = run("verify working tree", "git", ["status", "--porcelain"], undefined, {
     cwd: FIXTURE_CLONE_DIR,
