@@ -325,3 +325,63 @@ captured in the invoking shell and appended to the log in the same motion.
   could one day be tight — the measurement comment names the cause.
 - **`ensureFixtureClone` cold-clone concurrency** (T2's risk) applies to the
   scenarios surface too; same consequence, same retry.
+
+---
+
+# T4 — Scenario 1, the converging reset, the killed-run pair (2026-09-27)
+
+Candidate: branch `wi-16-t4`, final code identity recorded in the proving commands
+below. All claims are re-runnable from the committed tests and evidence logs.
+
+## Claims
+
+1. **The reset converges and never rewrites history (FR-004, D1).** A hand-made
+   mess that advances main is absorbed by an ADDED convergence commit whose tree is
+   the seed's: the mess's main survives as an ancestor (`merge-base --is-ancestor`
+   rc 0), the only remote head is `main`, no open PR remains, the tree equals the
+   seed's (`git diff --name-only` empty), issue #1 is open, and the local clone is
+   clean at origin/main. RED→GREEN: `evidence/t4-reset-convergence-{red,green}.log`
+   (the RED is the same assertion failing against T3's force-push reset, exit 1).
+2. **Revert markers keep a once-merged issue re-eligible.** After a scenario run
+   merges a fix, the next reset plants an empty `Revert "<title> (#N)"` commit —
+   the `mainRevertsPr` subject shape — for EVERY merged PR without one, and the
+   next run re-attempts the issue instead of skipping it as `skippedMerged`. Proven
+   by every rerun in this ticket (the scenario's first assertion would fail on any
+   `attempted: 0` summary), with the markers visible on the fixture's main.
+3. **Scenario 1 passes on positive evidence (FR-006, FR-005).** The real CLI,
+   driven through the queue path with exactly one eligible issue (the planner's
+   trigger is >1, so it is structurally absent), produces: the run-reported
+   `attempted: 1 (fixed: 1 …)` and `MERGED gh-1: … (canary: green)` lines; exactly
+   one NEW merged PR covering gh-1 (gh read-back, mergeCommit oid); issue #1
+   CLOSED; `tests/fixed-issues/test_gh_1.py` and the patched
+   `text[:limit - 1]` read off origin/main; no @-mention in the harness's own
+   output; and the before/after repro pair — the carried test run in the sandbox
+   against a seed archive fails, against merged main passes. Green:
+   `evidence/t4-scenario1-green.log`, exit 0, 580.10s.
+4. **A killed run does not change the next run's outcome (FR-004's completion,
+   FR-010 repeated).** A real run is SIGKILLed as a detached process group the
+   moment its PR is listable; the aftermath is read back (open PR on `fix/gh-1`,
+   branch on the remote, child dead by SIGKILL — the signal asserted); the reset
+   absorbs the mess; a full rerun reaches the same merged + canary-green outcome.
+   Green: `evidence/t4-killed-run-pair.log`, exit 0, 1034.57s.
+5. **The scenario can fail (FR-001).** A wrong argument planted in the entry path
+   (`src/loop.ts` `createPr` base `"maim-t4-planted"`) turns it red — the unit
+   surface stays green against the same tree (287/287, quoted in the log) — and the
+   byte-identical revert (`git diff --quiet` rc 0, proven before the re-run) turns
+   it green again: `evidence/t4-planted-defects.log`, exit 1 → exit 0.
+6. **A run that did no work cannot pass (FR-005's demonstration).** With the queue
+   emptied by a label no issue wears, the harness exits clean and the scenario
+   FAILS on its first positive-evidence assertion: `evidence/t4-induced-skip-red.log`,
+   exit 1, 319.14s.
+
+## Non-claims (T4's boundary, per the ticket)
+
+- Nothing about the planner pass, the multi-lane wave runner, the re-plan, the
+  merger/conflict path, the auto-revert net, or the escalation comment and label
+  writes beyond what Scenario 1's failure surface exercised (the planted defect's
+  `FAILED gh-1` line).
+- Nothing about a live model; the agent is T2's scripted one.
+- The one-off 18-minute banner-only stall of the first CLI spawn (leading theory:
+  a gh/git subprocess hung on a stalled connection) was not reproduced in five
+  later runs and nothing in `src/` was changed for it — recorded as a follow-up,
+  not a claim.

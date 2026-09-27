@@ -1,0 +1,228 @@
+# WI-16 T4 planted-defect RED→GREEN (FR-001)
+# Plant: src/loop.ts:1097 — createPr base: "main" → base: "maim-t4-planted" (a deliberately wrong
+# argument to the real gh pr create call in the entry path; uncommitted, reverted byte-identically).
+# Unit surface against the planted tree (the defect it does NOT see — that is the point):
+#   npm test → 10 files / 287 tests passed, rc=0 (log: /tmp/t4-d4-unittests.log, quoted verbatim below)
+--- npm test against the planted tree (verbatim tail) ---
+ Test Files  10 passed (10)
+      Tests  287 passed (287)
+# exit=0
+
+--- scenario RED against the planted tree (verbatim) ---
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t4
+
+stdout | tests/scenarios/scenario-1.test.ts > scenario 1 — reproduce-then-fix, end to end (WI-16 T4) > the queue path fixes gh-1: repro test committed, PR merged, canary green
+loop exited 1 — stdout tail:
+
+> software-factory-loop@0.0.0 loop
+> tsx src/loop.ts --repo /tmp/loop-integration-fixture --provider claude-via-proxy --image sandcastle-loop-test
+
+label "harness-failed" already exists — nothing to create
+plan: all unblocked
+plan: attempt gh-1
+[gh-1] Started on branch fix/gh-1
+  tail -f /tmp/loop-integration-fixture/.sandcastle/logs/fix-gh-1-gh-1.log
+branch 'fix/gh-1' set up to track 'origin/fix/gh-1'.
+Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
+FAILED gh-1: Command failed: gh pr create --title [loop] fix gh-1: truncate() returns one character more than the limit --body Automated fix for issue gh-1 (https://github.com/manjula25/loop-integration-fixture/issues/1).
+
+The reproduction test is retained in the suite at `tests/fixed-issues/test_gh_1.py`.
+
+## RED — reproduction test before the fix (verbatim)
+
+```
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________________ test_truncate_respects_limit _________________________
+
+    def test_truncate_respects_limit():
+        result = truncate("abcdefghij", 5)
+>       assert len(result) <= 5, f"truncate returned {len(result)} characters"
+E       AssertionError: truncate returned 6 characters
+E       assert 6 <= 5
+E        +  where 6 = len('abcde…')
+
+tests/fixed-issues/test_gh_1.py:7: AssertionError
+=========================== short test summary info ============================
+FAILED tests/fixed-issues/test_gh_1.py::test_truncate_respects_limit - Assert...
+1 failed in 0.02s
+```
+
+## GREEN — reproduction test after the fix (verbatim)
+
+```
+.                                                                        [100%]
+1 passed in 0.00s
+```
+
+Symptom mapping: issue gh-1 reported "truncate() returns one character more than the limit" — reproduced by `tests/fixed-issues/test_gh_1.py` failing exactly that way, now passing.
+
+Independent verification in a fresh sandbox: reproduction test passed; full-suite diff versus
+the onboarding baseline shows no new failures.
+
+This repo is opted into automatic merge: this PR is squash-merged automatically once the
+independent fresh-sandbox verification above has passed and a pre-merge diff-review pass
+approves; a post-merge canary suite then runs on the base branch and auto-reverts the
+merge if it goes red. Human review is still welcome at any time. --base maim-t4-planted --head fix/gh-1
+pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between maim-t4-planted and fix/gh-1, Base ref must be a branch (createPullRequest)
+
+
+stderr tail:
+remote: 
+remote: Create a pull request for 'fix/gh-1' on GitHub by visiting:        
+remote:      https://github.com/manjula25/loop-integration-fixture/pull/new/fix/gh-1        
+remote: 
+To https://github.com/manjula25/loop-integration-fixture.git
+ * [new branch]      fix/gh-1 -> fix/gh-1
+pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between maim-t4-planted and fix/gh-1, Base ref must be a branch (createPullRequest)
+Queue aborted — gh-1: Command failed: gh pr create --title [loop] fix gh-1: truncate() returns one character more than the limit --body Automated fix for issue gh-1 (https://github.com/manjula25/loop-integration-fixture/issues/1).
+
+The reproduction test is retained in the suite at `tests/fixed-issues/test_gh_1.py`.
+
+## RED — reproduction test before the fix (verbatim)
+
+```
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________________ test_truncate_respects_limit _________________________
+
+    def test_truncate_respects_limit():
+        result = truncate("abcdefghij", 5)
+>       assert len(result) <= 5, f"truncate returned {len(result)} characters"
+E       AssertionError: truncate returned 6 characters
+E       assert 6 <= 5
+E        +  where 6 = len('abcde…')
+
+tests/fixed-issues/test_gh_1.py:7: AssertionError
+=========================== short test summary info ============================
+FAILED tests/fixed-issues/test_gh_1.py::test_truncate_respects_limit - Assert...
+1 failed in 0.02s
+```
+
+## GREEN — reproduction test after the fix (verbatim)
+
+```
+.                                                                        [100%]
+1 passed in 0.00s
+```
+
+Symptom mapping: issue gh-1 reported "truncate() returns one character more than the limit" — reproduced by `tests/fixed-issues/test_gh_1.py` failing exactly that way, now passing.
+
+Independent verification in a fresh sandbox: reproduction test passed; full-suite diff versus
+the onboarding baseline shows no new failures.
+
+This repo is opted into automatic merge: this PR is squash-merged automatically once the
+independent fresh-sandbox verification above has passed and a pre-merge diff-review pass
+approves; a post-merge canary suite then runs on the base branch and auto-reverts the
+merge if it goes red. Human review is still welcome at any time. --base maim-t4-planted --head fix/gh-1
+pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between maim-t4-planted and fix/gh-1, Base ref must be a branch (createPullRequest)
+
+
+
+ ❯ tests/scenarios/scenario-1.test.ts (2 tests | 1 failed | 1 skipped) 391533ms
+   ❯ scenario 1 — reproduce-then-fix, end to end (WI-16 T4) (2)
+     × the queue path fixes gh-1: repro test committed, PR merged, canary green 391531ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/scenarios/scenario-1.test.ts > scenario 1 — reproduce-then-fix, end to end (WI-16 T4) > the queue path fixes gh-1: repro test committed, PR merged, canary green
+AssertionError: expected '\n> software-factory-loop@0.0.0 loop\…' to contain 'Run summary — attempted: 1 (fixed: 1,…'
+
+- Expected
++ Received
+
+- Run summary — attempted: 1 (fixed: 1, failed: 0) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
++
++ > software-factory-loop@0.0.0 loop
++ > tsx src/loop.ts --repo /tmp/loop-integration-fixture --provider claude-via-proxy --image sandcastle-loop-test
++
++ label "harness-failed" already exists — nothing to create
++ plan: all unblocked
++ plan: attempt gh-1
++ [gh-1] Started on branch fix/gh-1
++   tail -f /tmp/loop-integration-fixture/.sandcastle/logs/fix-gh-1-gh-1.log
++ branch 'fix/gh-1' set up to track 'origin/fix/gh-1'.
++ Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
++ FAILED gh-1: Command failed: gh pr create --title [loop] fix gh-1: truncate() returns one character more than the limit --body Automated fix for issue gh-1 (https://github.com/manjula25/loop-integration-fixture/issues/1).
++
++ The reproduction test is retained in the suite at `tests/fixed-issues/test_gh_1.py`.
++
++ ## RED — reproduction test before the fix (verbatim)
++
++ ```
++ F                                                                        [100%]
++ =================================== FAILURES ===================================
++ _________________________ test_truncate_respects_limit _________________________
++
++     def test_truncate_respects_limit():
++         result = truncate("abcdefghij", 5)
++ >       assert len(result) <= 5, f"truncate returned {len(result)} characters"
++ E       AssertionError: truncate returned 6 characters
++ E       assert 6 <= 5
++ E        +  where 6 = len('abcde…')
++
++ tests/fixed-issues/test_gh_1.py:7: AssertionError
++ =========================== short test summary info ============================
++ FAILED tests/fixed-issues/test_gh_1.py::test_truncate_respects_limit - Assert...
++ 1 failed in 0.02s
++ ```
++
++ ## GREEN — reproduction test after the fix (verbatim)
++
++ ```
++ .                                                                        [100%]
++ 1 passed in 0.00s
++ ```
++
++ Symptom mapping: issue gh-1 reported "truncate() returns one character more than the limit" — reproduced by `tests/fixed-issues/test_gh_1.py` failing exactly that way, now passing.
++
++ Independent verification in a fresh sandbox: reproduction test passed; full-suite diff versus
++ the onboarding baseline shows no new failures.
++
++ This repo is opted into automatic merge: this PR is squash-merged automatically once the
++ independent fresh-sandbox verification above has passed and a pre-merge diff-review pass
++ approves; a post-merge canary suite then runs on the base branch and auto-reverts the
++ merge if it goes red. Human review is still welcome at any time. --base maim-t4-planted --head fix/gh-1
++ pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between maim-t4-planted and fix/gh-1, Base ref must be a branch (createPullRequest)
++
++
+
+ ❯ expectScenarioOutcome tests/scenarios/scenario-1.test.ts:166:18
+    164|   // What the run REPORTS (pinned strings from `formatSummary`): one a…
+    165|   // one fixed, merged with a green canary — and none of the failure l…
+    166|   expect(stdout).toContain(
+       |                  ^
+    167|     "Run summary — attempted: 1 (fixed: 1, failed: 0) | skipped-duplic…
+    168|   );
+ ❯ tests/scenarios/scenario-1.test.ts:251:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 skipped (2)
+   Start at  23:15:53
+   Duration  391.71s (tests 100%)
+
+rc=1
+# exit=1 (Run summary — attempted: 1 (fixed: 0, failed: 1); the scenario failed on its first positive-evidence assertion)
+
+--- byte-identical revert proof (before the green re-run) ---
+$ git checkout -- src/loop.ts && git diff --quiet; echo rc=$?
+diff rc=0 (0 = byte-identical revert)
+$ git status --porcelain; echo rc=$?
+status-rc=0 (empty tree)
+
+--- scenario GREEN after the revert (verbatim) ---
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t4
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 1 skipped (2)
+   Start at  23:25:02
+   Duration  592.24s (tests 100%)
+
+rc=0
+# exit=0 (592.24s — the scenario can fail, and the failure was the plant, not the harness)
