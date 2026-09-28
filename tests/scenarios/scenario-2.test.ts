@@ -13,7 +13,7 @@
  * opens every test — Docker is genuinely required.
  */
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -110,6 +110,33 @@ describe("scenario 2 — onboarding against two seeded setups (WI-16 T5)", () =>
       expect(profile.testCmd).toBe("pytest -q");
       expect(profile.baselineFailures).toEqual([]);
       expect(run.stdout).toContain("suite exit: 0");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a documentation claim that does not execute never reaches the profile", () => {
+    assertScenariosPreconditions();
+    const dir = seedOnboardingFixture("documented");
+    try {
+      // The README's "Fast unit subset" line names a path that does not exist —
+      // the exact doc rot the execution gate exists for.
+      const run = runOnboard(
+        dir,
+        "--install",
+        'pip install -e ".[test]"',
+        "--test",
+        "pytest -q tests/unit/",
+      );
+      console.log(
+        `onboarding failed as designed — child output:\n${run.stdout ?? ""}${run.stderr ?? ""}`,
+      );
+      expect(run.status).not.toBe(0);
+      expect(run.stdout + run.stderr).toContain("SuiteDidNotRunError");
+      expect(run.stdout + run.stderr).toContain("no pytest summary line");
+      // The throw precedes the profile write: the claim that failed execution
+      // reached no profile.
+      expect(existsSync(join(dir, ".loop-harness", "profile.json"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
