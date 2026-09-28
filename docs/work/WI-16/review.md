@@ -1,124 +1,143 @@
-# WI-16 T4 — Review
+# WI-16 T5 — Review
 
 Specification review first, then code-quality review, both read-only, per the implement
 lifecycle. Written for the exact candidate below; if the candidate changes, both rerun.
-
-**Rerun record.** The first review (candidate `2b45ffc`) found one blocking defect, B1 —
-the scenarios suite had never passed as a whole (vitest file parallelism raced both files
-for the per-test fixture guard; every recorded green was single-file). B1 sent the
-candidate back to stage 3; this rerun covers the fix commit on the new range. B1 is
-resolved; the earlier findings I1 and M1–M5 were re-checked against the new range and
-carry over unchanged where noted.
+(The T4 review this file replaces is preserved in git history and in merged PR #27.)
 
 ## Candidate identities
 
-- **Fixed point:** `0a5fb4d4cd1c5c776fe6ca85e5334adc252cfabb` (T3 merged)
-- **Candidate:** `7deb819` (branch `wi-16-t4`, HEAD) — code identity; a docs-only
-  commit appending this rerun follows it.
-- **B1 fix range:** `2b45ffc..7deb819` (the pre-fix candidate is `2b45ffc`).
-- Ancestry verified (`git merge-base --is-ancestor 0a5fb4d 7deb819` rc 0); range
-  non-empty; working tree clean at review time (untracked `.env` excepted, never
-  committed).
+- **Fixed point:** `99d209c101dd9010025bf5178949673a4e56faf3` (T4 merged via PR #27)
+- **Candidate:** `7e7c4ef001e0b69b84850f47ba0cae067890dfb0` (branch `wi-16-t5`, HEAD) —
+  code identity `c0918ca`; the two commits after it are records only (ledger, verification,
+  CLAUDE.md, the whole-suite capture).
+- Ancestry verified (`git merge-base --is-ancestor` rc 0); range non-empty; working tree
+  clean at review time (untracked `.env` excepted, never committed).
 
 ## Changed-path accounting
 
-Full range `git diff --name-status 0a5fb4d..7deb819` — 13 files (the 12 from the first
-review, plus `CLAUDE.md` and `docs/work/WI-16/review.md` now also carrying the B1 fix
-records; `evidence/t4-final-suite-green.log` is new). The B1 fix range
-`2b45ffc..7deb819` — 7 files:
+`git diff --name-status 99d209c..7e7c4ef` — 13 files, 722 insertions / 1 deletion
+(the deletion is CLAUDE.md's replaced scenarios sentence):
 
 | Status | Path |
 |---|---|
-| M | `CLAUDE.md` (one lesson appended) |
-| A | `docs/work/WI-16/evidence/t4-final-suite-green.log` |
-| M | `docs/work/WI-16/implementation-notes.md` (ledger entry 12) |
-| M | `docs/work/WI-16/review.md` (this rerun) |
-| M | `docs/work/WI-16/verification.md` (T4 preamble corrected in place; claim 7 added) |
-| M | `tests/scenarios/command.test.ts` (two bounds re-measured) |
-| M | `vitest.scenarios.config.ts` (`fileParallelism: false`) |
+| M | `CLAUDE.md` (scenarios sentence amended — Scenario 2's local onboarding runs) |
+| A | `docs/work/WI-16/evidence/t5-false-claim-red.log` |
+| A | `docs/work/WI-16/evidence/t5-final-suite-green.log` |
+| A | `docs/work/WI-16/evidence/t5-onboarding-green.log` |
+| A | `docs/work/WI-16/evidence/t5-planted-defects.log` |
+| M | `docs/work/WI-16/implementation-notes.md` (ledger entry 13 appended) |
+| A | `docs/work/WI-16/implementation-plan-t5.md` |
+| M | `docs/work/WI-16/verification.md` (T5 section appended) |
+| A | `tests/scenarios/fixtures/onboarding-documented/README.md` |
+| A | `tests/scenarios/fixtures/onboarding-documented/pyproject.toml` |
+| A | `tests/scenarios/fixtures/onboarding-documented/src/loopsample2/__init__.py` |
+| A | `tests/scenarios/fixtures/onboarding-documented/tests/test_truncate.py` |
+| A | `tests/scenarios/scenario-2.test.ts` |
 
-**No file under `src/` is in either range** — the ticket's boundary holds.
+**No file under `src/` is in the range** — the ticket's boundary holds; the planted defect
+lived in `scripts/onboard.ts` only between runs and was reverted byte-identically (proof in
+`t5-planted-defects.log`, taken before the green re-run; controller re-verified
+`git diff --quiet -- scripts/onboard.ts` rc 0 at the accepted checkpoint).
 
 ## Axis verdicts
 
 ### 1. Repository standards — PASS
 
-- No `src/` change (verified against both diffs). No lint step invented. No command
-  changed, so `docs/agents/workflow.md` stays honestly unchanged.
-- Commit message carries the attribution trailer; the evidence log captures `rc=0`
-  from `rc=$?` on the immediately following line; ledger entry 12 is appended, not
-  rewritten; `verification.md` is corrected in place with the standing-claim rule named.
-- The new CLAUDE.md lesson is one line, dated, and states the general rule with the
-  specific instance.
+- No `src/` change (verified against the full diff, not the ledger's claim). No lint step
+  invented. No command changed — `npm run test:scenarios` already stands in
+  `docs/agents/workflow.md`, so its honesty rule is satisfied by CLAUDE.md's amended
+  sentence landing in the same PR as the surface.
+- Commit messages carry the attribution trailer; every evidence log's rc was captured on
+  the line immediately after its command; ledger entry 13 is appended, not rewritten;
+  the whole-suite green was captured **before** any green was claimed (T4's lesson,
+  applied without being reminded).
+- Secrets discipline: no credentials anywhere in the new files; the seeded fixture is a
+  synthetic sample with a fake identity (`t5-seed@invalid`).
 
-### 2. Specification fidelity — PASS (B1 resolved)
+### 2. Specification fidelity — PASS
 
-- **B1 → RESOLVED.** `vitest.scenarios.config.ts` now sets `fileParallelism: false`
-  with a comment naming the cause and both observations. The whole-suite command is
-  green at the fixed identity: `evidence/t4-final-suite-green.log` — `Test Files
-  2 passed (2)`, `Tests 6 passed (6)`, 2396.06s, `rc=0`, captured verbatim (byte-copy
-  of the run log). FR-011's dedicated command now passes as a whole suite.
-- The two re-measured bounds follow the established convention: measured figure in the
-  comment, bound ≈ 2x the measurement, cause (doubled gh API latency, dated) named.
-  The 480s→900s change is forced by a real timeout (487s, still working when cut),
-  not convenience.
-- FR-001/FR-004/FR-005/FR-006/FR-010 verdicts from the first review are unchanged —
-  their evidence logs and tests are untouched by the fix range.
-- **I1 remains open, non-blocking** (see below): `specification.md` FR-004's standing
-  text still describes the pre-D1 force-push semantics.
+Traced against `specification.md` FR-007 (read in full), the T5 ticket's four acceptance
+checkboxes, and the approved plan (`implementation-plan-t5.md`, ponytail recs 1–2 applied):
+
+- **Criterion 1** (documented setup, profile whose commands execute): test A — the true
+  README pair on argv, `status === 0`, profile asserted field-by-field, `suite exit: 0`.
+- **Criterion 2** (undocumented setup the same way): test B — no flags, the `optValue`
+  defaults recorded and executed. The plan's one code-read fact was confirmed live.
+- **Criterion 3** (false claim writes no profile, recorded RED): test C — green test over
+  a red run, with the verbatim `SuiteDidNotRunError` trace and the no-profile assertion;
+  the log carries the recorded RED beside the green test.
+- **Criterion 4** (no `src/` change): changed-path accounting above.
+- **FR-001's evidence class**: the planted-defect pair — unit 287/287 green against the
+  swallowed gate (quoted verbatim), the scenario red on exactly the false-claim test.
+  D4's premise (the entry wiring is invisible to the unit surface) was confirmed, not
+  assumed.
+- **FR-011**: the command is unchanged and now covers 3 files / 9 tests, whole-suite
+  green at the final code identity (`t5-final-suite-green.log`, 2530.40s, rc=0).
+- Each plan task was implemented by one leaf implementer, inspected and independently
+  re-run by the controller before its checkpoint commit — the loop the implement skill
+  prescribes.
 
 ### 3. Evidence and risk integrity — PASS
 
-- `verification.md`'s falsified preamble ("All claims are re-runnable…") is corrected
-  in place: the correction states what the record previously claimed, names B1, points
-  at the green capture, and scopes the per-claim re-runnability honestly (claims 1–6
-  single-file at the pre-fix identity, claim 7 the whole-suite command).
-- E1 is closed: the missing verbatim failure-block evidence is superseded rather than
-  retroactively captured — the 2026-09-27 log is gone, the reproduction's signature is
-  recorded in the correction, and the re-runnable command now passes, so the artifact
-  a reader re-runs is the green capture. The correction paragraph says exactly this.
-- The three `api.github.com` blips (2026-09-28) are recorded in the ledger entry
-  alongside the 18-minute stall follow-up — the pattern has members and a name now.
+- All four evidence logs are verbatim with correctly captured rcs; the planted-defect log
+  records the revert proof BEFORE the green re-run (the ordering T3/T4 established).
+- `verification.md`'s T5 section claims only what the logs show, states the reporter
+  caveat explicitly, and gives the whole-suite command as the re-verification path — no
+  re-runnability overclaim of the kind B1 punished.
+- The reporter discovery (vitest 5's agent-mode minimal reporter silences passing-test
+  console output) is recorded in three honest places: the log's first line, ledger entry
+  13, and verification's caveat — with the env conditions disclosed, not hidden.
 
-### 4. Unnecessary complexity — PASS
+### 4. Unnecessary complexity — PASS (minor observations)
 
-The fix is one config line. The bound changes carry their measurements. Nothing new to
-complexity; M1–M5 from the first review are unchanged by this range.
+One committed seed with the undocumented variant derived by README removal (ponytail 1)
+and one `runOnboard` helper pinning the spawn argv/timeout (ponytail 2) — the applied
+recommendations are visible in the delivered code, not just the plan. Observations M3–M4
+below.
 
 ## Findings
 
 ### Blocking
 
-- None. **B1 resolved** (fix + whole-suite green capture + in-place verification
-  correction, all in `2b45ffc..7deb819`).
+- None.
 
 ### Important, non-blocking
 
-- **I1 — `specification.md` FR-004 text is stale** (carried over, unchanged). Behavior
-  still reads "the base branch reset to the seed commit"; the approved D1 implemented
-  tree-equality convergence (history never rewritten, revert markers, issues reopened).
-  Needs a recorded spec amendment so a reader tracing FR-004 does not find the text and
-  the code disagreeing. Not a delivery blocker for this ticket: the divergence is
-  recorded in three places (plan D1, ledger entry 11, verification claim 1) and the
-  amendment is a documentation action on a requirements artifact, which per CLAUDE.md
-  goes through its own recorded change rather than a silent edit riding a fix commit.
+- None new. **I1 carries forward from T4's review**: `specification.md` FR-004's standing
+  text still describes the pre-D1 force-push reset semantics — unchanged by this ticket,
+  still needing its own recorded amendment.
 
-### Minor (carried over, none in the fix range)
+### Minor
 
-- **M1** — unrecorded plan deviation (planner-absence assertion argued structurally).
-- **M2** — duplicated CLI spawn argv; a shared const would pin one source.
-- **M3** — missing fast-fail timeouts on `mergedPrs()` / `gitIn()` read-backs.
-- **M4** — `LOOP_IDENTITY` duplicated between `fixture-reset.ts` and `src/loop.ts`.
-- **M5** — orphaned-child edge in the killed-run test (kill not in a `finally`).
+- **M1 — plan D2 reads the ticket's phrasing more loosely than the ticket wrote it.** The
+  ticket says the README names "an install command and a test command, of which at least
+  one is deliberately false"; D2 makes that pair true and adds a third, false claim ("Fast
+  unit subset"). The spec's authoritative text ("at least one documentation claim is
+  false") is satisfied, and D2's rationale (criteria 1 and 3 both testable without
+  contradiction) is sound and was approved — recorded here so the ticket/spec wording and
+  the delivered seed are never silently assumed identical.
+- **M2 — one evidence log's command is env-conditional.** `t5-false-claim-red.log` was
+  captured with `CLAUDECODE`/`AI_AGENT`/`CLAUDE_CODE_CHILD_SESSION` unset and `NO_COLOR=1`
+  (vitest's agent-mode reporter suppresses passing-test console output). Disclosed in the
+  log's first line and in verification's caveat; a re-runner in an agent session still
+  gets a green test but a quieter log. Future evidence relying on passing-test output
+  should state the same condition.
+- **M3 — duplicated failure-print blocks.** Tests A and B repeat the same
+  `if (run.status !== 0) console.log(...)` block; folding it into `runOnboard` (which
+  could print on non-zero itself) would pin it in one place. Two occurrences — taste.
+- **M4 — ambient git-config dependence in seed commits.** `seedOnboardingFixture` commits
+  with `-c user.name/user.email` but does not neutralize a global `commit.gpgsign`; a
+  teammate with signing forced would see seed-commit failures. The same exposure exists in
+  `fixture-reset.ts`'s machinery, so this is a surface-wide property, not a regression.
 
 ### Missing evidence
 
-- **E2 (carried over)** — the 18-minute once-off stall remains a recorded follow-up,
-  not a claim; three same-class network blips are now logged beside it. Unchanged.
+- None pending — all four logs are captured, and the whole-suite green stands at the final
+  code identity.
 
 ## Next step
 
-No blocking findings. `verification-before-completion` is satisfied by the corrected
-record plus the whole-suite green at the fixed identity; the candidate is ready for
-`finishing-a-development-branch`, which stays gated on the owner's explicit
-authorization, as always. I1 is the one follow-up this work item hands forward.
+No blocking findings; verification is fresh (whole-suite green 2026-09-28 at `7e7c4ef`'s
+code identity). The candidate is ready for `finishing-a-development-branch`, which stays
+gated on the owner's explicit authorization. I1 remains the standing follow-up, joined by
+M1's record note if the ticket text is ever revisited.

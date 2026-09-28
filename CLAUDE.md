@@ -45,7 +45,13 @@ prompt/stream contract with no model and no network. Alongside it, `tests/scenar
 (`npm run test:scenarios`, isolated config `vitest.scenarios.config.ts`) holds the
 scenario-level surface: whole-loop runs against the same fixture through the real CLI
 entry, each opening with a precondition check and holding the fixture guard, with the
-reset/guard/seed machinery in `tests/scenarios/fixture-reset.ts`.
+reset/guard/seed machinery in `tests/scenarios/fixture-reset.ts` — and, from WI-16 T5,
+Scenario 2's onboarding runs: the onboarding entry (`scripts/onboard.ts`) executed as a
+process against local per-run git setups seeded from the committed
+`tests/scenarios/fixtures/onboarding-documented/` (the undocumented variant is that seed
+with the README removed; the README deliberately carries one false command). No guard, no
+reset — nothing is shared, and a used repo dir cannot be re-onboarded anyway
+(`sandbox.close()` leaves `.sandcastle/worktrees/loop-onboard`).
 
 There is still **no lint step** — do not invent one. The authoritative command list lives in
 `docs/agents/workflow.md` (Repository commands); read it rather than guessing, and when a

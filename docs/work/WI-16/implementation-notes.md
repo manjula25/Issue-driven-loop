@@ -375,6 +375,54 @@ at the fixed identity, via claim 7). A lesson was added to CLAUDE.md: a suite wh
 files contend for one resource must run the whole suite before any green is
 recorded — every single-file green hides the collision.
 
+## 13. T5 — Scenario 2, onboarding against two seeded setups — 2026-09-28
+
+**T5.0 (plan, `cbcd7ea`):** `implementation-plan-t5.md`, every load-bearing fact verified
+by LIVE probes against the real entry first (not source reads): a local-only git repo with
+no remote onboards fine (~15s wall, warm Docker); the false claim path produces exactly
+`SuiteDidNotRunError` with no profile; and a used repo dir CANNOT be re-onboarded —
+`sandbox.close()` leaves `.sandcastle/worktrees/loop-onboard`, so `git branch -D
+loop/onboard` refuses (corollary: never seed a fixture by copying a used repo — `cp -r`
+carries `.git`'s stale worktree registration; both observed). Hence D1: local per-run repos
+built from ONE committed seed, the undocumented variant derived by removing the README
+(ponytail rec 1); D2: the README's false claim is a "Fast unit subset" line naming a
+nonexistent path beside a true Setup/Running-the-tests pair; D3: no guard, no reset
+(FR-010's boundary — nothing is shared); D4: the plant goes in `scripts/onboard.ts`
+(no unit test imports the entry wiring). Ponytail rec 2: one `runOnboard` helper pins the
+spawn argv/timeout. Worktree `wi-16-t5` off `99d209c`; baselines typecheck rc=0, 287/287
+rc=0; untracked `.env` copied in (WI-14's lesson). Each task ran as one leaf implementer
+under the implement controller; the controller re-ran every focused green itself before
+committing.
+
+**T5.1 (`d4505a3`):** seeds + tests A/B, born green first try (file-scoped 2/2, 61.85s;
+controller re-run 2/2, 61.81s; typecheck and 287/287 rc=0 alongside). The no-flags default
+run (test B) confirmed live the plan's one code-read fact: the `optValue` defaults supply
+exactly `pip install -e ".[test]"` and `pytest -q`.
+
+**T5.2 (`6245f44`):** test C — green test over a red onboarding run; the evidence log
+carries the child's verbatim `SuiteDidNotRunError` trace beside the green result. One
+genuinely new fact found on the way, now disclosed in that log's first line: **vitest 5
+defaults to the 'minimal' reporter under agent env** (`std-env` isAgent — triggered by
+CLAUDECODE/AI_AGENT/CLAUDE_CODE_CHILD_SESSION), and MinimalReporter silences console
+output from PASSING tests (the constructor option beats `--silent=false`). The capture run
+therefore unsets those vars with NO_COLOR=1 — a human operator's terminal sees the default
+reporter, so the log shows what a re-runner sees. Consequence for any future evidence that
+relies on a passing test's console.log: it is invisible in agent-mode runs (T4's
+t4-planted-defects.log showed stdout precisely because its test FAILED).
+
+**T5.3 (`c0918ca`):** the planted-defect pair, exactly D4's premise confirmed: unit 287/287
+GREEN against the swallowed gate (quoted verbatim in the log), the scenario RED on exactly
+the false-claim test with the plant's signature printed by the test itself (`suite exit: 4`
+yet `baseline failures (0)` and `profile written:`), revert proven byte-identical
+(`git diff --quiet` rc=0) BEFORE the 3/3 green re-run. `scripts/onboard.ts` untouched at
+HEAD (controller-verified).
+
+**T5.4:** this entry, the T5 section of `verification.md`, the CLAUDE.md scenarios
+sentence amended (Scenario 2's onboarding runs against local seeded setups — the old
+sentence said "the same fixture" for everything), and the whole-suite green capture
+`evidence/t5-final-suite-green.log` — `Test Files 3 passed (3)`, `Tests 9 passed (9)`,
+2530.40s, rc=0, run at the final code identity.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,

@@ -1,0 +1,32 @@
+Produced by: npx vitest run --config vitest.scenarios.config.ts tests/scenarios/scenario-2.test.ts (file-scoped run). Run with CLAUDECODE, AI_AGENT and CLAUDE_CODE_CHILD_SESSION unset and NO_COLOR=1: vitest 5 defaults to the 'minimal' reporter under agent env (std-env isAgent), which silences console output from passing tests — unsetting them yields the default reporter a human operator sees, so the child's SuiteDidNotRunError output the test prints is captured beside the green result.
+
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5
+
+stdout | tests/scenarios/scenario-2.test.ts > scenario 2 — onboarding against two seeded setups (WI-16 T5) > a documentation claim that does not execute never reaches the profile
+onboarding failed as designed — child output:
+/home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5/src/onboard-profile.ts:30
+  if (!SUITE_SUMMARY_RE.test(stdout)) throw new SuiteDidNotRunError(exitCode);
+                                            ^
+
+SuiteDidNotRunError: no pytest summary line in suite output (exit 4) — did the test command run anything?
+    at parseSuiteBaseline (/home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5/src/onboard-profile.ts:30:45)
+    at main (/home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5/scripts/onboard.ts:63:30)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async <anonymous> (/home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5/scripts/onboard.ts:81:1)
+
+Node.js v24.18.0
+
+
+ ✓ tests/scenarios/scenario-2.test.ts (3 tests) 91518ms
+   ✓ scenario 2 — onboarding against two seeded setups (WI-16 T5) (3)
+     ✓ documented setup: onboarding records the commands a reader takes from the docs, and they execute 30512ms
+     ✓ undocumented setup: onboarding onboards on the pip-editable convention defaults 30532ms
+     ✓ a documentation claim that does not execute never reaches the profile 30470ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  17:27:29
+   Duration  91.76s (tests 100%)
+
+rc=0
