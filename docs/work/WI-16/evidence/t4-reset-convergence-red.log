@@ -1,0 +1,40 @@
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t4
+
+remote: 
+remote: Create a pull request for 't3/hand-mutation' on GitHub by visiting:        
+remote:      https://github.com/manjula25/loop-integration-fixture/pull/new/t3/hand-mutation        
+remote: 
+ ❯ tests/scenarios/command.test.ts (4 tests | 1 failed | 3 skipped) 374653ms
+   ❯ the scenarios command (WI-16 T3) (4)
+     × resets a hand-mutated fixture: branch gone, PR closed, tree converged, history kept 374651ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/scenarios/command.test.ts > the scenarios command (WI-16 T3) > resets a hand-mutated fixture: branch gone, PR closed, tree converged, history kept
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/scenarios/command.test.ts:189:29
+    187|       { cwd: FIXTURE_CLONE_DIR, encoding: "utf8" },
+    188|     );
+    189|     expect(ancestor.status).toBe(0);
+       |                             ^
+    190|   }, 480_000);
+    191|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 skipped (4)
+   Start at  16:03:24
+   Duration  374.81s (tests 100%)
+
+
+# exit=1 (ancestor assertion failed: merge-base --is-ancestor returned 1 — T3 force-push reset erased the mess commit)

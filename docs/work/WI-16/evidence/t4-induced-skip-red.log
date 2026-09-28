@@ -1,0 +1,63 @@
+# WI-16 T4 induced-skip RED (FR-005) — a run that did no work cannot pass
+#
+# Plant (in the TEST's spawn args, the scenario surface — not src/): runLoopCli
+# gained `--label scenarios-empty-queue` — a label worn by no issue, so the
+# harness's queue finds nothing eligible and the CLI exits 0 having done no work.
+# The scenario must FAIL on its first positive-evidence assertion; exiting clean
+# is not a pass condition (FR-005).
+#
+# Revert proof (scoped to the planted file, after the RED run):
+#   $ git checkout -- tests/scenarios/scenario-1.test.ts
+#   $ git diff --quiet -- tests/scenarios/scenario-1.test.ts; echo rc=$?
+#   test-file diff rc=0 (0 = byte-identical revert)
+#
+# The GREEN counterpart is the committed test's green run
+# (evidence/t4-scenario1-green.log, exit 0, 580.10s).
+
+--- scenario RED under the induced skip (verbatim) ---
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t4
+
+ ❯ tests/scenarios/scenario-1.test.ts (2 tests | 1 failed | 1 skipped) 318891ms
+   ❯ scenario 1 — reproduce-then-fix, end to end (WI-16 T4) (2)
+     × the queue path fixes gh-1: repro test committed, PR merged, canary green 318889ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/scenarios/scenario-1.test.ts > scenario 1 — reproduce-then-fix, end to end (WI-16 T4) > the queue path fixes gh-1: repro test committed, PR merged, canary green
+AssertionError: expected '\n> software-factory-loop@0.0.0 loop\…' to contain 'Run summary — attempted: 1 (fixed: 1,…'
+
+- Expected
++ Received
+
+- Run summary — attempted: 1 (fixed: 1, failed: 0) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
++
++ > software-factory-loop@0.0.0 loop
++ > tsx src/loop.ts --repo /tmp/loop-integration-fixture --provider claude-via-proxy --image sandcastle-loop-test --label scenarios-empty-queue
++
++ label "harness-failed" already exists — nothing to create
++ plan: all unblocked
++ Run summary — attempted: 0 (fixed: 0, failed: 0) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
++
+
+ ❯ expectScenarioOutcome tests/scenarios/scenario-1.test.ts:168:18
+    166|   // What the run REPORTS (pinned strings from `formatSummary`): one a…
+    167|   // one fixed, merged with a green canary — and none of the failure l…
+    168|   expect(stdout).toContain(
+       |                  ^
+    169|     "Run summary — attempted: 1 (fixed: 1, failed: 0) | skipped-duplic…
+    170|   );
+ ❯ tests/scenarios/scenario-1.test.ts:253:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 skipped (2)
+   Start at  23:36:41
+   Duration  319.14s (tests 100%)
+
+rc=1
+# exit=1 (319.14s — the harness exited clean, the queue was empty, and the scenario
+# failed anyway: "expected … to contain Run summary — attempted: 1 (fixed: 1 …)",
+# the first positive-evidence assertion)

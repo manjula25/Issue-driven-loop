@@ -1,258 +1,124 @@
-# WI-16 Review — T2: the scripted-agent image
+# WI-16 T4 — Review
 
-**Standing claim.** Corrected in place if wrong. This review covers the exact
-candidate below; if the candidate changes, the verdict is discarded and the new
-range re-reviewed.
+Specification review first, then code-quality review, both read-only, per the implement
+lifecycle. Written for the exact candidate below; if the candidate changes, both rerun.
 
-- **Fixed point:** `9915ef5` (T1 complete on `main`)
-- **Candidate:** `83fd204` — `docs(WI-16): name the code identity, not a self-referential hash`
-  (range `9915ef5..83fd204`, 6 commits, 14 files, +686/−18; ancestry verified).
-- **Reviewed:** 2026-09-26, read-only, in worktree `wi-16-t2`. First verdict was
-  issued at `7cb640e` and **discarded** when the candidate changed (E1 fix);
-  this is the re-review of the new range. The delta `7cb640e..83fd204` touches
-  exactly three files — the two re-captured vitest evidence logs and
-  `verification.md` — no code.
-- **Authoritative artifacts read:** `specification.md` (FR-002, FR-003), `tickets/t2-scripted-agent-image.md`,
-  `implementation-plan-t2.md` (with its in-place corrections), `verification.md`, `implementation-notes.md`,
-  all three T2 evidence logs, every changed file at `83fd204`.
+**Rerun record.** The first review (candidate `2b45ffc`) found one blocking defect, B1 —
+the scenarios suite had never passed as a whole (vitest file parallelism raced both files
+for the per-test fixture guard; every recorded green was single-file). B1 sent the
+candidate back to stage 3; this rerun covers the fix commit on the new range. B1 is
+resolved; the earlier findings I1 and M1–M5 were re-checked against the new range and
+carry over unchanged where noted.
 
-## Changed-path accounting (all 14 files)
+## Candidate identities
 
-| Path | Change | Accounted |
-|---|---|---|
-| `.sandcastle/Dockerfile.test` | new — 3-line image layer | FR-002 artifact (reviewed as file) |
-| `.sandcastle/scripted-agent/claude` | new — the scripted agent | FR-002 artifact |
-| `tests/integration/fixture.ts` | +TEST_IMAGE, assertImageBuilt, ensureFixtureClone | shared test config |
-| `tests/integration/fixture.test.ts` | private clone-if-absent → exported helper | dedup, no behavior change |
-| `tests/integration/scripted-agent.test.ts` | new — the two T2 tests | the ticket's tests |
-| `package.json` | +`build:image:test` | command surface |
-| `docs/agents/workflow.md` | +integration-tests row (incl. T1's unrecorded command) | standards requirement |
-| `CLAUDE.md` | +integration-surface paragraph | standards requirement |
-| `docs/work/WI-16/evidence/t2-image-missing-red.log` | new | T2.1 RED |
-| `docs/work/WI-16/evidence/t2-adapter-green.log` | new | T2.2 GREEN |
-| `docs/work/WI-16/evidence/t2-planted-defects.log` | new | T2.3 pairs |
-| `docs/work/WI-16/implementation-notes.md` | +entries 6–9 | ledger |
-| `docs/work/WI-16/implementation-plan-t2.md` | stdout fact + D7 corrected in place | correction record |
-| `docs/work/WI-16/verification.md` | +T2 section | standing claim |
+- **Fixed point:** `0a5fb4d4cd1c5c776fe6ca85e5334adc252cfabb` (T3 merged)
+- **Candidate:** `7deb819` (branch `wi-16-t4`, HEAD) — code identity; a docs-only
+  commit appending this rerun follows it.
+- **B1 fix range:** `2b45ffc..7deb819` (the pre-fix candidate is `2b45ffc`).
+- Ancestry verified (`git merge-base --is-ancestor 0a5fb4d 7deb819` rc 0); range
+  non-empty; working tree clean at review time (untracked `.env` excepted, never
+  committed).
 
-**No file under `src/`** — FR-003 satisfied by enumeration, not assertion.
+## Changed-path accounting
+
+Full range `git diff --name-status 0a5fb4d..7deb819` — 13 files (the 12 from the first
+review, plus `CLAUDE.md` and `docs/work/WI-16/review.md` now also carrying the B1 fix
+records; `evidence/t4-final-suite-green.log` is new). The B1 fix range
+`2b45ffc..7deb819` — 7 files:
+
+| Status | Path |
+|---|---|
+| M | `CLAUDE.md` (one lesson appended) |
+| A | `docs/work/WI-16/evidence/t4-final-suite-green.log` |
+| M | `docs/work/WI-16/implementation-notes.md` (ledger entry 12) |
+| M | `docs/work/WI-16/review.md` (this rerun) |
+| M | `docs/work/WI-16/verification.md` (T4 preamble corrected in place; claim 7 added) |
+| M | `tests/scenarios/command.test.ts` (two bounds re-measured) |
+| M | `vitest.scenarios.config.ts` (`fileParallelism: false`) |
+
+**No file under `src/` is in either range** — the ticket's boundary holds.
 
 ## Axis verdicts
 
 ### 1. Repository standards — PASS
 
-- `workflow.md` gained the new commands in the same PR that adds them, including
-  T1's debt (`test:integration` was added without recording it — caught and paid here).
-- CLAUDE.md's "What is built so far" gained the integration-surface paragraph, same PR.
-- No lint surface invented; evidence lives under `docs/work/WI-16/`; commit messages
-  follow the repo's `type(WI-16):` convention with accurate bodies.
-- Ledger corrections follow the two-behavior rule: plan facts corrected in place with
-  what-was-previously-claimed and the proof; `implementation-notes.md` appended.
+- No `src/` change (verified against both diffs). No lint step invented. No command
+  changed, so `docs/agents/workflow.md` stays honestly unchanged.
+- Commit message carries the attribution trailer; the evidence log captures `rc=0`
+  from `rc=$?` on the immediately following line; ledger entry 12 is appended, not
+  rewritten; `verification.md` is corrected in place with the standing-claim rule named.
+- The new CLAUDE.md lesson is one line, dated, and states the general rule with the
+  specific instance.
 
-### 2. Specification fidelity — PASS
+### 2. Specification fidelity — PASS (B1 resolved)
 
-- **FR-002:** the image differs from production only in the agent entry point —
-  `Dockerfile.test` is `FROM sandcastle-loop` + one `COPY`; the shadow was verified live
-  (`which claude` → `/home/agent/.local/bin/claude`, script shebang). The scripts answer the
-  real contracts (result-event stdout with evidence blocks; `<review>` verdict through
-  `parseReviewOutput`) rather than bypassing them. No network call exists in the script —
-  structural, and stated as such.
-- **FR-003:** no `src/` change; the `--image`/adapter seam sufficed. The stop condition
-  never fired, and the three plan-vs-runner defects were all absorbed test-side.
-- All four ticket acceptance criteria are met (image diff by review; fix-pass integration
-  run; review-pass parser satisfaction; changed-path accounting — this document).
+- **B1 → RESOLVED.** `vitest.scenarios.config.ts` now sets `fileParallelism: false`
+  with a comment naming the cause and both observations. The whole-suite command is
+  green at the fixed identity: `evidence/t4-final-suite-green.log` — `Test Files
+  2 passed (2)`, `Tests 6 passed (6)`, 2396.06s, `rc=0`, captured verbatim (byte-copy
+  of the run log). FR-011's dedicated command now passes as a whole suite.
+- The two re-measured bounds follow the established convention: measured figure in the
+  comment, bound ≈ 2x the measurement, cause (doubled gh API latency, dated) named.
+  The 480s→900s change is forced by a real timeout (487s, still working when cut),
+  not convenience.
+- FR-001/FR-004/FR-005/FR-006/FR-010 verdicts from the first review are unchanged —
+  their evidence logs and tests are untouched by the fix range.
+- **I1 remains open, non-blocking** (see below): `specification.md` FR-004's standing
+  text still describes the pre-D1 force-push semantics.
 
-### 3. Evidence and risk integrity — **PASS (E1 resolved)**
+### 3. Evidence and risk integrity — PASS
 
-- **E1 (was blocking, resolved at `c89c588`):** the two vitest logs now carry
-  their exit codes — `exit=1` in `t2-image-missing-red.log` (re-captured after
-  `docker rmi sandcastle-loop-test`, which is that log's own precondition, stated in the
-  log's exit line) and `exit=0` in `t2-adapter-green.log` (re-captured after a rebuild;
-  5 passed / 152.90s). Each exit line records that it was captured immediately after the
-  command. `verification.md`'s figures were corrected in place to the fresh capture, with
-  the pre-correction figure (149.68s) named rather than erased. The claim and its artifacts
-  now agree.
-- `t2-planted-defects.log` is clean on this axis: `rc=1`/`rc=0` on the line after each
-  command (7 `rc=` lines), byte-identity proven before each green re-run.
-- The plan's two corrected facts each state what they previously claimed and carry the
-  proof pointer (`implementation-notes.md` §7) — re-checkable against
-  `node_modules/@ai-hero/sandcastle/dist/index.js:262–305, 513`.
+- `verification.md`'s falsified preamble ("All claims are re-runnable…") is corrected
+  in place: the correction states what the record previously claimed, names B1, points
+  at the green capture, and scopes the per-claim re-runnability honestly (claims 1–6
+  single-file at the pre-fix identity, claim 7 the whole-suite command).
+- E1 is closed: the missing verbatim failure-block evidence is superseded rather than
+  retroactively captured — the 2026-09-27 log is gone, the reproduction's signature is
+  recorded in the correction, and the re-runnable command now passes, so the artifact
+  a reader re-runs is the green capture. The correction paragraph says exactly this.
+- The three `api.github.com` blips (2026-09-28) are recorded in the ledger entry
+  alongside the 18-minute stall follow-up — the pattern has members and a name now.
 
-### 4. Unnecessary complexity — PASS (two non-blocking observations)
+### 4. Unnecessary complexity — PASS
 
-- **O1:** `ImageNotBuiltError` takes the image name as a parameter but its message
-  hardcodes `npm run build:image:test` — correct for the only current caller
-  (`TEST_IMAGE`), misleading if the guard is ever reused for another image. Acceptable
-  now; if reused, derive the command or split the guard.
-- **O2:** the script checks the commit's return code but not `git config`/`git add`'s —
-  a failure there surfaces at the commit, which is checked. Acceptable for a fixture actor.
-- The per-test guard triple (`assertFixtureReady` + `assertImageBuilt` +
-  `ensureFixtureClone`) duplicates across the two tests — this mirrors T1's deliberate
-  per-test-guard convention (documented in `fixture.test.ts`), so it is justified, not a smell.
-
-## Findings summary
-
-| ID | Severity | Class | Finding | Status |
-|---|---|---|---|---|
-| E1 | was blocking | evidence integrity | two T2 evidence logs lacked recorded exit codes, contradicting verification.md's claim and the repo's T1.2 lesson | **resolved** at `c89c588`, re-verified at `83fd204` |
-| O1 | minor | complexity | `ImageNotBuiltError` message hardcodes the test-image build command | open, accepted (single caller) |
-| O2 | minor | complexity | script does not check `git config`/`git add` return codes (commit check covers the failure) | open, accepted |
-
-## Unverified evidence
-
-- Nothing on the specification axis is unverified: the spec is approved and traced
-  (FR-002 ← prd D1, FR-003 ← prd D4), and both were checked against the artifact.
-- Claim 5 of `verification.md` (no API spend) is structural-by-reading, honestly labeled —
-  verified as a property of the script's source at `83fd204` (no urllib/requests/curl; the
-  only subprocesses are pip, pytest, git).
-
-## Verdict
-
-**All four axes PASS at `83fd204`.** No blocking findings remain; the two open observations
-are minor and accepted with reasons. Verification is fresh (integration gates re-run at the
-E1 re-capture; unit gate and typecheck unchanged at the same code identity, `2499b90`).
-`finishing-a-development-branch` is the recommended next skill — delivery still requires
-the owner's explicit authorization.
-
----
-
-# WI-16 Review — T3: the scenarios command, the reset, the guard
-
-## Candidate identities
-
-- Fixed point: `4701f21d59c8c5e2b9b3281d4f69a3ea92c3c27c` (the T3 plan)
-- Candidate (last code identity): `5393e1af0f205570e38fcaf61ebbdb90c614af71`
-- Docs-only commits follow on the branch (`afd326c` at review time); range reviewed:
-  `4701f21..5393e1a`, 4 commits, 11 files, +948/−9, ancestry verified (`git
-  merge-base --is-ancestor`, rc 0).
-- Authoritative requirement: `tickets/t3-integration-command.md` +
-  `implementation-plan-t3.md` (commit `4701f21`), tracing to `specification.md`
-  FR-004/FR-005/FR-010/FR-011/FR-013.
-
-## Changed-path accounting (all 11 files)
-
-`tests/scenarios/fixture-reset.ts`, `tests/scenarios/command.test.ts`,
-`vitest.scenarios.config.ts`, `package.json` (the surface); `CLAUDE.md`,
-`docs/agents/workflow.md` (the honesty catch-ups FR-011/FR-013 require);
-`implementation-plan-t3.md` + 4 evidence logs (records). None under `src/`
-(FR-003 — checked `git diff --name-only`, zero hits). Every file read in full
-at the candidate, not from the commit messages.
-
-## Axis verdicts
-
-**Repository standards — PASS.** Exit codes captured with `rc=$?` on the
-immediately following line in all four logs; the three plan corrections are
-in-place strikethroughs naming the evidence that falsified them (none silent);
-CLAUDE.md and the authoritative command table gained the surface in the same
-change; numerals-beside-lists verified by recount (11 files named in both
-`verification.md` claim 8 and `implementation-notes.md` §10; the enumeration
-counts 11).
-
-**Specification fidelity — PASS.** All five acceptance criteria mapped: command
-isolation + unchanged default gate (`t3-surface-red.log` context, `npm test`
-287 rc=0, `test:integration` 5/5 rc=0); hand-mutation → clean
-(`t3-command-green.log`, both captures); guard refusal naming the holder +
-dead-holder steal (guard test); precondition RED at test and command level
-(`t3-precondition-red.log`, 4/4 naming docker); no `src/` change (accounting
-above). The ticket's own posture is honored precisely: the empty-queue
-assertion is about fixture state, not exit code, and the killed-run →
-clean-run pair and guard-under-real-work are left to T4 exactly as the ticket's
-Evidence boundary requires. Deviations from the plan are all recorded and
-corrected in place (born-red mechanism, the uncatchable `gh pr close` defect,
-the force-push defect needing a main advance, PATH → DOCKER_HOST).
-
-**Evidence and risk integrity — FAIL (finding E1, blocking).** The T3 section's
-contingency paragraph is wrong twice about its own evidence: it classes claim
-5's red as "cannot be re-run as printed now", but
-`DOCKER_HOST=unix:///nonexistent-t3.sock npm run test:scenarios` is verbatim
-re-runnable and reproduces the red — only claim 1's red is contingent (the
-born-red stub was replaced in `0e10076`; re-running that command now yields
-green); and it asserts "Each log says so", but neither log's footer states any
-contingency — a reader re-running `t3-surface-red.log`'s command against the
-current tree gets a pass with no explanation in the log. Same class as T2's E1:
-a standing record claiming more than its evidence says.
-
-**Unnecessary complexity — PASS, one local smell (A1).** No speculative surface:
-every export is used by the tests or the machinery. `releaseFixtureGuard`'s
-throw-into-its-own-catch with a string-marker rethrow works and is tested, but
-the plain shape (parse to a variable, decide, remove) says the same thing
-without the marker.
+The fix is one config line. The bound changes carry their measurements. Nothing new to
+complexity; M1–M5 from the first review are unchanged by this range.
 
 ## Findings
 
-**Blocking**
+### Blocking
 
-- **E1** — `verification.md` T3 §"Claims → evidence" trailing paragraph: claim 5
-  misclassified as non-re-runnable, and "Each log says so" is false of both
-  logs. Fix: correct the paragraph in place (contingency is claim 1's alone)
-  and append a marked contingency note to `t3-surface-red.log` so the log
-  itself tells the re-runner why they see green.
+- None. **B1 resolved** (fix + whole-suite green capture + in-place verification
+  correction, all in `2b45ffc..7deb819`).
 
-**Adjacent observations (non-blocking)**
+### Important, non-blocking
 
-- **A1** — `fixture-reset.ts` `releaseFixtureGuard`: string-marker rethrow
-  control flow; simpler equivalent available.
-- **A2** — `command.test.ts` passes the literal `"scenarios-empty-queue"` to
-  the loop while `EMPTY_QUEUE_LABEL` is exported for exactly that name — a
-  rename would drift the test from the machinery silently.
-- **A3** — `t3-planted-defects.log` footer: "(4/4 suite green re-verified
-  after)" — at that point only the filtered single test had been re-run; the
-  full 4/4 arrived later as the T3.5 re-capture (it exists, header-dated, in
-  `t3-command-green.log`). The footer reads as if within the pair.
-- **A4** — the 111s standalone measurement justifying the 480s timeouts has no
-  verbatim capture under `docs/work/WI-16/evidence/` (it is quoted in the green
-  log's editorial footer and a test comment); the durable proof of sufficiency
-  is the two full-suite greens containing the test (578.38s, 690.47s).
+- **I1 — `specification.md` FR-004 text is stale** (carried over, unchanged). Behavior
+  still reads "the base branch reset to the seed commit"; the approved D1 implemented
+  tree-equality convergence (history never rewritten, revert markers, issues reopened).
+  Needs a recorded spec amendment so a reader tracing FR-004 does not find the text and
+  the code disagreeing. Not a delivery blocker for this ticket: the divergence is
+  recorded in three places (plan D1, ledger entry 11, verification claim 1) and the
+  amendment is a documentation action on a requirements artifact, which per CLAUDE.md
+  goes through its own recorded change rather than a silent edit riding a fix commit.
 
-## Unverified evidence
+### Minor (carried over, none in the fix range)
 
-- The guard against two genuinely concurrent processes (proven here against a
-  planted holder only; ticket defers real-work concurrency to T4).
-- The reset against a real run's mess (hand-made only; killed-run pair is T4's).
-- The 16s-per-gh-POST and 111s figures (A4 — editorial citations, not captures).
+- **M1** — unrecorded plan deviation (planner-absence assertion argued structurally).
+- **M2** — duplicated CLI spawn argv; a shared const would pin one source.
+- **M3** — missing fast-fail timeouts on `mergedPrs()` / `gitIn()` read-backs.
+- **M4** — `LOOP_IDENTITY` duplicated between `fixture-reset.ts` and `src/loop.ts`.
+- **M5** — orphaned-child edge in the killed-run test (kill not in a `finally`).
 
-## Verdict
+### Missing evidence
 
-Specification and code quality pass; evidence integrity fails on E1. Back to
-stage 3 for the E1 fix, then re-review the corrected records. A1–A4 may be
-taken or left with the record as-is; none is load-bearing for the ticket's
-claims.
+- **E2 (carried over)** — the 18-minute once-off stall remains a recorded follow-up,
+  not a claim; three same-class network blips are now logged beside it. Unchanged.
 
----
+## Next step
 
-# WI-16 Re-review — T3 at `0dd9ed3` (E1 resolution)
-
-## Candidate identities
-
-- Fixed point unchanged: `4701f21`. Code identity unchanged: `5393e1a` — the
-  delta since the first review is docs only (`afd326c` records, `6f2ea2e` the
-  E1 fix, `0dd9ed3` the re-runnability proof), so the specification,
-  code-quality and standards verdicts carry over unchanged; only the evidence
-  axis re-verdicts.
-
-## E1 resolution, checked
-
-1. The wrong paragraph is corrected **in place** in `verification.md`, names
-   what it previously claimed, and restricts contingency to claim 1's red —
-   verified by re-reading; no surviving copy of "cannot be re-run as printed"
-   or "Each log says so" in T3's section (the remaining hits are T1's and T2's
-   own reviewed sections, and this file's quotations of the finding).
-2. `t3-surface-red.log` carries the appended, clearly-marked contingency note:
-   a re-runner seeing green is told why.
-3. Beyond the fix: the corrected record's re-runnability claim for claim 5 is
-   now **proved, not asserted** — the exact command re-run at `0dd9ed3`'s
-   tree: 4/4 failed naming docker, `exit=1`, appended verbatim to
-   `t3-precondition-red.log` with its exit line.
-
-## Verdict
-
-**Evidence and risk integrity — PASS.** All four axes now pass; no blocking
-findings. A1–A4 remain recorded as adjacent observations, none load-bearing;
-the candidate for delivery is the code at `5393e1a` with records through
-`0dd9ed3`.
-
-## Next recommended skill
-
-`finishing-a-development-branch` — with the owner's explicit authorization for
-push/PR (the branch is stacked on `wi-16-t2` / PR #25, which is still awaiting
-human merge).
+No blocking findings. `verification-before-completion` is satisfied by the corrected
+record plus the whole-suite green at the fixed identity; the candidate is ready for
+`finishing-a-development-branch`, which stays gated on the owner's explicit
+authorization, as always. I1 is the one follow-up this work item hands forward.

@@ -287,16 +287,108 @@ exactly 11 files, none under `src/`: `CLAUDE.md`, `docs/agents/workflow.md`,
 `tests/scenarios/command.test.ts`, `tests/scenarios/fixture-reset.ts`,
 `vitest.scenarios.config.ts`.
 
+## 11. T4 — Scenario 1, the converging reset, the killed-run pair — 2026-09-27
+
+**T4.1 (plan):** `implementation-plan-t4.md` at `b8d6dc1`. The headline decision D1
+resolved the collision the T3 reset left behind: force-pushing main back to the seed
+erases revert subjects, and a merged scenario fix would strand issue #1 as permanently
+`skippedMerged`. The reset now CONVERGES — one added commit whose tree is the seed's,
+empty `Revert "…" (#N)` marker commits for every merged PR (the exact subject shape
+`mainRevertsPr` reads), every closed issue reopened (T3's D6, answered: issue state IS
+part of the reset), a plain push, and a self-verify on TREE equality plus heads/PRs/
+issues/worktree. T3's `expectFixtureClean` moved with it (sha equality → tree equality
++ issue #1 open), and the hand-mutation test gained the never-rewrite assertion
+(`merge-base --is-ancestor` of the mess's main). RED first
+(`evidence/t4-reset-convergence-red.log`, exit 1 — the ancestor check failed against
+the force-push reset), GREEN after the amendment (`evidence/t4-reset-convergence-green.log`,
+exit 0, 467s; the other three T3 tests and the 287-test unit suite rc=0 alongside).
+
+**T4.2 (Scenario 1):** `tests/scenarios/scenario-1.test.ts`, committed green at
+`248950c` (`evidence/t4-scenario1-green.log`, 580.10s). Two assertion defects were
+found and fixed on the way, both in the TEST, neither in `src/`: the no-@ check
+matched npm's own `package@version` banner (dropped before the check now), and the
+merged-PR read-back counted PRs from earlier runs (the converging reset re-opens
+their issues; it does not unmerge them — the assertion is now "exactly one NEW
+merged PR", baselined per run). The chain itself ran clean on every attempt: PR
+opened, reviewed, squash-merged, canary green, issue closed, repro test and patched
+defect read off origin/main, and the before/after repro pair ran the carried test in
+the sandbox against a seed archive (RED) and merged main (GREEN). One anomaly stays
+recorded: the very first attempt produced banner-only stdout for 18 minutes and
+died at the spawnSync timeout — the leading theory (a gh/git subprocess hanging on a
+stalled connection; none of the harness's exec calls carry a timeout) was not
+reproduced in five later runs, and nothing in `src/` was changed for it; the test's
+spawn timeout (1080s) is ~3x the measured full-chain time (~330s).
+
+**T4.3 (killed-run → clean-run pair):** green at `52dcdcb`
+(`evidence/t4-killed-run-pair.log`, 1034.57s). A real run is SIGKILLed as a detached
+process group the moment its PR becomes listable — inside the review window, before
+the squash-merge POST; the aftermath (open PR, `fix/gh-1` on the remote, child dead
+by SIGKILL) is read back before the reset absorbs the mess and a full rerun reaches
+the same merged + canary-green outcome. The first attempt failed on the assertion
+mechanics, not the kill: `Atomics.wait` blocks the event loop, so the child's exit
+event — and `signalCode` with it — could never be delivered while the test waited
+for it; the poll loop now `await`s its sleep. The lesson is general: a blocked loop
+turns a healthy kill into `signalCode: null`, and the same blocking pattern starves
+the child's stdout drain.
+
+**T4.4 (demonstrations):** the planted-defect RED→GREEN
+(`evidence/t4-planted-defects.log`): `createPr`'s `base: "main"` planted as
+`"maim-t4-planted"` in `src/loop.ts` — the unit surface stayed green against it
+(287/287, quoted verbatim in the log), the scenario went red
+(`failed: 1`, exit 1, 391.71s), the revert was proven byte-identical
+(`git diff --quiet` rc 0) BEFORE the green re-run (592.24s, exit 0). The induced-skip
+RED (`evidence/t4-induced-skip-red.log`): the scenario test's own spawn args planted
+with `--label scenarios-empty-queue` — the queue found nothing, the harness exited
+clean, and the scenario FAILED on its first positive-evidence assertion (FR-005's
+inward application, recorded).
+
+## 12. T4 review — the whole-suite finding, the fix, the re-measured bounds — 2026-09-28
+
+The read-only reviews (specification first, then code-quality; `review.md`) found one
+**blocking** defect the per-file greens had structurally hidden: `npm run test:scenarios`
+had **never passed as a whole suite**. `vitest.scenarios.config.ts` set no
+`fileParallelism`, and vitest runs test FILES in parallel by default — from T4 on there
+are two files, both acquiring the same per-test fixture guard, so the file that lost the
+race failed every guard-acquiring test. Observed twice (2026-09-27 23:44, reproduced
+2026-09-28 11:08): 3 of 4 command tests red at ~16s each — preconditions, then the guard
+refusal — while `scenario-1.test.ts` held the guard. Every green T3 and T4 recorded was a
+single-file run (`Test Files 1 passed (1)` in all six T4 evidence logs), which is why the
+collision surfaced only at the first honest whole-suite run. Fix (test-only):
+`fileParallelism: false` in the scenarios config.
+
+The fix-verification run then exposed a second, latent defect the same morning: the
+hand-mutation reset test **timed out at its 480s bound** (487s, still working when cut)
+inside an otherwise-passing file — gh API latency had roughly doubled versus the T3
+baseline (a plain `gh pr list` READ cost 16.1s; T3 had POSTs at ~16s and reads cheaper).
+Re-measured standalone, bounds raised with the figures in the test comments:
+hand-mutation 471.52s → 900s (~1.9x); empty-queue invocation 350.62s (111s at T3) → 720s
+(~2x). One transient `error connecting to api.github.com` blip failed a measurement run
+instantly (603ms) and a retry ran clean, and a third drop at 13:34 killed the whole-suite
+relaunch in 17.7s the same way — same class as the 18-minute stall follow-up below,
+recorded here so the pattern has three members.
+
+The whole-suite green landed 14:38 (started 13:58:41, survived the drop window):
+`Test Files 2 passed (2)`, `Tests 6 passed (6)`, 2396.06s, rc=0 — captured verbatim
+as `evidence/t4-final-suite-green.log`, and `verification.md`'s T4 preamble was
+corrected in place per the standing-claim rule (the re-runnability claim now holds
+at the fixed identity, via claim 7). A lesson was added to CLAUDE.md: a suite whose
+files contend for one resource must run the whole suite before any green is
+recorded — every single-file green hides the collision.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
   and not touched.
-- T1.3 raised `testTimeout` to 300_000 on the integration surface. It is a bound,
-  not a budget — and T3 exercised the sanctioned escape: the two gh-heavy
-  scenario tests each carry an explicit 480_000 with the latency measurement in
-  a comment (~16s per gh API POST; the empty-queue run is 111s standalone).
-- D6's open question stands for T4: the reset does not touch issues or labels —
-  whether a scenario needs issue-state reset is T4's to answer with a scenario
-  that cares.
-
-
+- The timeout precedent T3 set now extends to the scenario tests: per-test bounds
+  carry their measured figures in a comment (scenario 1: 580s measured, 1200s
+  bound; killed-run pair: 1035s measured, 1800s bound; ~16s per gh API POST
+  dominates every reset).
+- D6's open question (T3): whether a scenario needs issue-state reset.
+  **Answered 2026-09-27 (T4 D1): issue state IS part of the reset — every closed
+  issue is reopened; labels are still untouched (the harness itself adds and
+  removes `harness-failed`).**
+- T4's unreproduced once-off: one 18-minute banner-only stall of the CLI child
+  (leading theory: a gh/git subprocess hung on a stalled connection — the
+  harness's exec calls carry no timeouts). Five later runs were clean; if it
+  recurs, the fix belongs in `src/` as its own reported decision, per the
+  ticket's boundary.
