@@ -19,5 +19,11 @@ export default defineConfig({
     // anything here needs today; a scenario that legitimately needs longer
     // raises it with its own evidence.
     testTimeout: 300_000,
+    // T4 review B1: every test acquires the per-test fixture guard, and vitest
+    // runs test FILES in parallel by default — from T4 on there are two files,
+    // so the loser of the race fails its guard-acquiring tests (observed twice:
+    // 3/4 command tests red at ~16s each while scenario-1 held the guard).
+    // Files must serialize; within a file vitest is already sequential.
+    fileParallelism: false,
   },
 });

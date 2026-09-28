@@ -100,9 +100,13 @@ function expectFixtureClean(): void {
 
 describe("the scenarios command (WI-16 T3)", () => {
   it("resets a hand-mutated fixture: branch gone, PR closed, tree converged, history kept", () => {
-    // Owns a 480s timeout like the invocation test below: it performs TWO
+    // Timeout note: measured 471.52s standalone on 2026-09-28, when gh API
+    // latency had roughly doubled versus T3's baseline (a plain READ cost
+    // ~16s) — the same morning's whole-suite run timed this test out at its
+    // former 480s bound (487s, still working when cut). The test performs TWO
     // resets (the self-healing start plus the reset under test) and a
-    // three-part mess, and each gh API POST costs ~16s from this network.
+    // three-part mess, each step paying that network. 900s ≈ 1.9x the
+    // measurement, per the bound-not-budget rule.
     assertScenariosPreconditions();
     openGuard();
     ensureFixtureClone();
@@ -187,7 +191,7 @@ describe("the scenarios command (WI-16 T3)", () => {
       { cwd: FIXTURE_CLONE_DIR, encoding: "utf8" },
     );
     expect(ancestor.status).toBe(0);
-  }, 480_000);
+  }, 900_000);
 
   it("smallest real invocation: the loop finds no eligible issue and the fixture is unchanged", () => {
     assertScenariosPreconditions();
@@ -199,10 +203,11 @@ describe("the scenarios command (WI-16 T3)", () => {
     // The real CLI entry as a process (FR-001's shape), with placeholder
     // provider credentials — resolveProvider validates presence only. The
     // label is worn by no issue, so the queue is empty: no planner, no
-    // sandbox, no agent pass. This test carries its own 480s timeout (the
-    // config's 300s default is a bound, not a budget): a single gh API POST
-    // costs ~16s from this network, and the empty-queue run makes several —
-    // measured standalone at 111s, rc=0.
+    // sandbox, no agent pass. Timeout note: measured 111s standalone at T3
+    // (2026-09-26) but 350.62s on 2026-09-28, when gh API latency had roughly
+    // doubled (a plain READ cost ~16s) — the reset's several POSTs pay that
+    // network. 720s ≈ 2x the measurement, per the bound-not-budget rule (the
+    // config's 300s default would not survive either figure).
     const run = spawnSync(
       "npm",
       [
@@ -237,7 +242,7 @@ describe("the scenarios command (WI-16 T3)", () => {
     }
 
     expectFixtureClean();
-  }, 480_000);
+  }, 720_000);
 
   it("the guard refuses while held, naming the holder; a dead holder is stolen", () => {
     assertScenariosPreconditions();

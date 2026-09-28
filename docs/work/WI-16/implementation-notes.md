@@ -342,6 +342,39 @@ with `--label scenarios-empty-queue` — the queue found nothing, the harness ex
 clean, and the scenario FAILED on its first positive-evidence assertion (FR-005's
 inward application, recorded).
 
+## 12. T4 review — the whole-suite finding, the fix, the re-measured bounds — 2026-09-28
+
+The read-only reviews (specification first, then code-quality; `review.md`) found one
+**blocking** defect the per-file greens had structurally hidden: `npm run test:scenarios`
+had **never passed as a whole suite**. `vitest.scenarios.config.ts` set no
+`fileParallelism`, and vitest runs test FILES in parallel by default — from T4 on there
+are two files, both acquiring the same per-test fixture guard, so the file that lost the
+race failed every guard-acquiring test. Observed twice (2026-09-27 23:44, reproduced
+2026-09-28 11:08): 3 of 4 command tests red at ~16s each — preconditions, then the guard
+refusal — while `scenario-1.test.ts` held the guard. Every green T3 and T4 recorded was a
+single-file run (`Test Files 1 passed (1)` in all six T4 evidence logs), which is why the
+collision surfaced only at the first honest whole-suite run. Fix (test-only):
+`fileParallelism: false` in the scenarios config.
+
+The fix-verification run then exposed a second, latent defect the same morning: the
+hand-mutation reset test **timed out at its 480s bound** (487s, still working when cut)
+inside an otherwise-passing file — gh API latency had roughly doubled versus the T3
+baseline (a plain `gh pr list` READ cost 16.1s; T3 had POSTs at ~16s and reads cheaper).
+Re-measured standalone, bounds raised with the figures in the test comments:
+hand-mutation 471.52s → 900s (~1.9x); empty-queue invocation 350.62s (111s at T3) → 720s
+(~2x). One transient `error connecting to api.github.com` blip failed a measurement run
+instantly (603ms) and a retry ran clean, and a third drop at 13:34 killed the whole-suite
+relaunch in 17.7s the same way — same class as the 18-minute stall follow-up below,
+recorded here so the pattern has three members.
+
+The whole-suite green landed 14:38 (started 13:58:41, survived the drop window):
+`Test Files 2 passed (2)`, `Tests 6 passed (6)`, 2396.06s, rc=0 — captured verbatim
+as `evidence/t4-final-suite-green.log`, and `verification.md`'s T4 preamble was
+corrected in place per the standing-claim rule (the re-runnability claim now holds
+at the fixed identity, via claim 7). A lesson was added to CLAUDE.md: a suite whose
+files contend for one resource must run the whole suite before any green is
+recorded — every single-file green hides the collision.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,

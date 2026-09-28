@@ -328,10 +328,27 @@ captured in the invoking shell and appended to the log in the same motion.
 
 ---
 
-# T4 — Scenario 1, the converging reset, the killed-run pair (2026-09-27)
+# T4 — Scenario 1, the converging reset, the killed-run pair (2026-09-27; corrected 2026-09-28)
 
 Candidate: branch `wi-16-t4`, final code identity recorded in the proving commands
-below. All claims are re-runnable from the committed tests and evidence logs.
+below. *(Corrected in place 2026-09-28, review finding B1: this preamble previously
+claimed "All claims are re-runnable from the committed tests and evidence logs" —
+falsified by the first whole-suite run of `npm run test:scenarios`, which failed:
+`vitest.scenarios.config.ts` set no `fileParallelism`, vitest runs test FILES in
+parallel by default, and both scenario files acquire the same per-test fixture
+guard, so the file losing the race failed every guard-acquiring test. Every green
+this ticket had recorded was a single-file run (`Test Files 1 passed (1)` in all six
+evidence logs below). The claim holds again only at the fixed identity — see claim 7
+and `evidence/t4-final-suite-green.log`. The re-measured per-test bounds ride the
+same fix: gh API latency roughly doubled versus T3's baseline on 2026-09-28, so the
+hand-mutation test was re-measured standalone at 471.52s (raised 480s→900s) and the
+empty-queue invocation at 350.62s (raised 480s→720s), figures in the test comments.)*
+
+The failure block of the first observed whole-suite run (2026-09-27 23:44) was lost
+to overnight tmpdir cleanup before vitest printed the detail; it was reproduced
+2026-09-28 11:08 (3 of 4 command tests red at ~16s each while `scenario-1.test.ts`
+held the guard — preconditions, then instant guard refusal), which is the same
+signature the two network-independent observations share.
 
 ## Claims
 
@@ -373,6 +390,13 @@ below. All claims are re-runnable from the committed tests and evidence logs.
    emptied by a label no issue wears, the harness exits clean and the scenario
    FAILS on its first positive-evidence assertion: `evidence/t4-induced-skip-red.log`,
    exit 1, 319.14s.
+7. **The suite passes as a whole (B1's fix, 2026-09-28).** `npm run
+   test:scenarios` — both files, all six tests, the files serialized by
+   `fileParallelism: false` — is green: `evidence/t4-final-suite-green.log`,
+   `Test Files 2 passed (2)`, `Tests 6 passed (6)`, 2396.06s, `rc=0`. This is the
+   command a reader re-runs to re-verify the whole ticket; claims 1–6 above were
+   each proven by single-file runs at the pre-fix identity and remain re-runnable
+   the same way (each log names its file).
 
 ## Non-claims (T4's boundary, per the ticket)
 
