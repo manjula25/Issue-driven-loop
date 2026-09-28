@@ -1,11 +1,14 @@
 /**
- * WI-16 T6 — Scenario 3 (FR-008 criteria 1 + 2): a stale project profile
+ * WI-16 T6 — Scenario 3 (FR-008 criteria 1–3): a stale project profile
  * aborts the queue BEFORE the fix run, through the real CLI's queue path
- * against the shared fixture. The seed is the honest form of "the code drifted
- * after onboarding": a teammate (the loop identity) pushed a test asserting
- * the DOCUMENTED truncate contract, which the seeded latent defect fails — so
- * the fresh baseline reports a failure the profile's `baselineFailures: []`
- * does not record, and the mismatch arm fires (plan D2).
+ * against the shared fixture. Test 1's seed is the honest form of "the code
+ * drifted after onboarding": a teammate (the loop identity) pushed a test
+ * asserting the DOCUMENTED truncate contract, which the seeded latent defect
+ * fails — so the fresh baseline reports a failure the profile's
+ * `baselineFailures: []` does not record, and the mismatch arm fires (plan
+ * D2). Test 2 seeds the other direction: a `testCmd` that exits 0 while
+ * executing no test at all — silence the gate must reject rather than read
+ * as "no new failures" (criterion 3, the unreadable arm, recorded RED).
  *
  * Green test over a RED run (child exit 1): the pass condition is the run's
  * pinned abort strings plus the no-spend read-backs — no PR, no branch, an
@@ -158,6 +161,25 @@ def test_baseline_contract():
     assert truncate("abcdefghij", 5) == "abcd…"
 `;
 
+/**
+ * Test 2's seed (plan T6.2): the fixture's committed profile with testCmd —
+ * and ONLY testCmd — changed to a command that exits 0 while executing no
+ * test and printing no summary line (`echo baseline-green`). Every other
+ * field is byte-identical to the fixture's committed profile. `SUITE_SUMMARY_RE`
+ * (src/verify.ts) cannot match the echo's output, so the gate must take the
+ * unreadable arm — silence is not success.
+ */
+const SILENT_TESTCMD_PROFILE = `{
+  "language": "python",
+  "installCmd": "pip install -e \\".[test]\\\"",
+  "testCmd": "echo baseline-green",
+  "singleTestCmd": "pytest -q {test}",
+  "baselineFailures": [],
+  "expectedDurationSec": 3,
+  "autoMerge": true
+}
+`;
+
 describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", () => {
   it("a stale baseline aborts before the fix run, naming re-onboarding", () => {
     // Timeout note: measured 435s on the first green (reset ~210s dominated
@@ -261,5 +283,104 @@ describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", 
     expect(latest).toContain("Outcome: preflight-failed");
     expect(latest).toContain("project profile is stale");
     expect(latest).not.toMatch(/^@/m);
+  }, 900_000);
+
+  it("a command that exits zero while executing no test is not read as a pass", () => {
+    // Timeout note: measured 447s on the first green, the same shape as test
+    // 1's 435s (reset ~210s gh-bound, run dominated by the preflight
+    // sandbox's pip install and the escalation gh write, read-backs ~5s). The
+    // 900s bound is ~2x the measurement, per the bound-not-budget rule
+    // (T3/T4 precedent) — the CLI spawn itself carries 1080s.
+    assertScenariosPreconditions();
+    openGuard();
+    ensureFixtureClone();
+    // The converged reset absorbs test 1's staleness seed (a new convergence
+    // commit restoring the canonical tree). The harness-failed label STAYS:
+    // labels are not an eligibility filter and the reset never touches them
+    // (plan fact) — nothing about it is asserted here.
+    resetFixture();
+    // The seed is a PROFILE edit this time: testCmd becomes a command that
+    // exits 0 while executing no test. The CLI reads the profile from the
+    // repo at startup, so the pushed edit is what this run obeys.
+    seedStaleness(
+      { ".loop-harness/profile.json": SILENT_TESTCMD_PROFILE },
+      "seed: a test command that executes nothing",
+    );
+    // Comment baseline BEFORE the run: test 1's run already posted a
+    // preflight-failed comment on issue #1, so a "latest contains" assertion
+    // alone could pass on test 1's comment — only a comment NEWER than this
+    // baseline proves THIS run escalated.
+    const commentsBefore = JSON.parse(
+      execFileSync(
+        "gh",
+        ["issue", "view", "1", "--repo", FIXTURE_REPO, "--json", "comments"],
+        { encoding: "utf8" },
+      ),
+    ) as Array<{ body: string }>;
+    const commentCountBefore = commentsBefore.length;
+    // Captured AFTER the seed (test 1's corrected ordering): the tip the
+    // no-spend assertion compares against is the seed itself.
+    const shaBefore = gitIn(["rev-parse", "origin/main"]).trim();
+
+    const run = runLoopCli();
+    // Unconditional (plan D1): the evidence log carries the red run beside
+    // the green test — exit 1 is the designed outcome, observed here.
+    printReportLines(run);
+    const stdout = run.stdout ?? "";
+    const stderr = run.stderr ?? "";
+
+    // Criterion 3 — the gate rejects exit-zero silence: `echo baseline-green`
+    // prints no line `SUITE_SUMMARY_RE` can match, so the unreadable arm
+    // fires and the FAILED line carries the head of the silent output. A
+    // zero-test exit-0 run is recorded as a failure, never a pass.
+    expect(stdout).toContain(
+      'FAILED gh-1: Aborted before the fix run — full-suite output is unreadable — no pytest summary line found (starts: "baseline-green")',
+    );
+    expect(stdout).toContain(
+      "Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0",
+    );
+    expect(stderr).toContain("Queue aborted");
+
+    // The same no-spend read-backs as test 1 (criterion 2's shape). The fetch
+    // first: origin/main as the REMOTE holds it, not as a stale ref remembers it.
+    gitIn(["fetch", "--quiet", "--prune", "origin"]);
+    const open = JSON.parse(
+      execFileSync(
+        "gh",
+        ["pr", "list", "--repo", FIXTURE_REPO, "--state", "open", "--json", "number"],
+        { encoding: "utf8" },
+      ),
+    ) as Array<{ number: number }>;
+    expect(open).toHaveLength(0);
+    const heads = gitIn(["ls-remote", "--heads", "origin"])
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => line.replace(/.*refs\/heads\//, "").trim());
+    expect(heads).toEqual(["main"]);
+    // No fix branch was ever created, and the preflight branch was deleted
+    // after the gate — neither survives in the local clone.
+    expect(gitIn(["branch", "--list", "fix/gh-1"]).trim()).toBe("");
+    expect(gitIn(["branch", "--list", "loop/preflight-gh-1"]).trim()).toBe("");
+    // Tip equality: the run added nothing to main — the profile seed is still
+    // the tip, and a merged (squash) PR would necessarily have advanced it.
+    expect(gitIn(["rev-parse", "origin/main"]).trim()).toBe(shaBefore);
+    // The issue the run aborted on is still open.
+    const issue = JSON.parse(
+      execFileSync(
+        "gh",
+        ["issue", "view", "1", "--repo", FIXTURE_REPO, "--json", "state,comments"],
+        { encoding: "utf8" },
+      ),
+    ) as { state: string; comments: Array<{ body: string }> };
+    expect(issue.state).toBe("OPEN");
+
+    // THIS run escalated again: a comment newer than the pre-run baseline
+    // carries the preflight-failed outcome class. (The label need not be
+    // re-asserted — issue #1 already wears it from test 1.)
+    const newComments = issue.comments.slice(commentCountBefore);
+    expect(newComments.length).toBeGreaterThan(0);
+    expect(newComments.map((comment) => comment.body).join("\n")).toContain(
+      "Outcome: preflight-failed",
+    );
   }, 900_000);
 });
