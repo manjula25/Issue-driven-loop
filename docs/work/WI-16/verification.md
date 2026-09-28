@@ -409,3 +409,91 @@ signature the two network-independent observations share.
   a gh/git subprocess hung on a stalled connection) was not reproduced in five
   later runs and nothing in `src/` was changed for it — recorded as a follow-up,
   not a claim.
+
+---
+
+# T5 — Scenario 2: onboarding against two seeded setups (2026-09-28)
+
+Candidate: branch `wi-16-t5`, code identity `c0918ca` (records follow it). The
+whole-suite command below is what a reader re-runs to re-verify this ticket; the
+per-claim logs name their file-scoped commands.
+
+## The claim, exactly
+
+T5 drives onboarding — its own entry point, `scripts/onboard.ts`, executed as a
+process — against two seeded local setups: one documented (a README whose Setup
+and Running-the-tests commands are true, plus one deliberately false "Fast unit
+subset" line naming a nonexistent path), one undocumented (the same seed with the
+README removed). Both setups yield a profile whose recorded commands just executed
+in a sandbox; a documentation claim that does not execute throws
+`SuiteDidNotRunError` and writes no profile. No file under `src/` changed.
+
+## Proving commands, run fresh at `c0918ca`
+
+```
+$ npm run typecheck
+exit=0
+```
+
+```
+$ npm test
+exit=0
+      Tests  287 passed (287)
+```
+
+```
+$ npm run test:scenarios
+exit=0
+ Test Files  3 passed (3)
+      Tests  9 passed (9)
+   Duration  2530.40s (tests 100%)
+```
+(`evidence/t5-final-suite-green.log`, started 17:42:52 — the whole suite, per the
+CLAUDE.md lesson every green must be whole-suite from T4 on. The 9 = T3/T4's 6 plus
+Scenario 2's 3.)
+
+## Claims → evidence
+
+| # | Claim | Proved by | Output |
+|---|---|---|---|
+| 1 | Criterion 1 — the documented setup, driven with the commands a reader takes from the README, writes a profile whose `installCmd`/`testCmd` are exactly those commands and just executed (`suite exit: 0`) | `evidence/t5-onboarding-green.log` (test A) | 2 passed file-scoped, rc=0; profile asserted field-by-field |
+| 2 | Criterion 2 — the undocumented setup (same files, no README), driven with no flags, onboards on the pip-editable convention defaults | `evidence/t5-onboarding-green.log` (test B) | defaults `pip install -e ".[test]"` / `pytest -q` recorded and executed; `suite exit: 0` |
+| 3 | Criterion 3 — a documentation claim that does not execute never reaches the profile | `evidence/t5-false-claim-red.log` | green test over a RED onboarding run: rc≠0, verbatim `SuiteDidNotRunError: no pytest summary line in suite output (exit 4)` out of `src/onboard-profile.ts:30` via `scripts/onboard.ts:63`, and no `.loop-harness/profile.json` |
+| 4 | The scenario's false-claim assertion is load-bearing — the entry wiring, not the parser, is the seam | `evidence/t5-planted-defects.log` | plant in `scripts/onboard.ts` (swallowed gate): unit 287/287 GREEN against it (quoted verbatim), scenario RED on exactly the false-claim test with the plant's signature (`suite exit: 4` yet `profile written:`); revert proven byte-identical (`git diff --quiet` rc=0) BEFORE the 3/3 green re-run |
+| 5 | No file under `src/` changed | changed-path accounting, `99d209c..c0918ca` | tests/scenarios/** and docs/** only |
+| 6 | The default gates are unchanged | this record, run at `c0918ca` | 287/287 rc=0; typecheck rc=0 |
+
+## Evidence boundary and non-claims
+
+- The setups are local per-run git repos built from one committed seed
+  (`tests/scenarios/fixtures/onboarding-documented/`); onboarding invokes no agent,
+  no GitHub, no gh. A used repo dir cannot be re-onboarded (verified live:
+  `sandbox.close()` leaves `.sandcastle/worktrees/loop-onboard`) — hence fresh repos
+  per run, which is why there is no guard and no reset here (FR-010's boundary).
+- Does not cover a third language, onboarding's interactive or human-approval
+  paths, or any agent behavior (FR-007's non-claims).
+- Does not prove the docs are *good*: the test plays the operator who read them —
+  it proves the commands a reader would take from them execute, not that a reader
+  would take those commands.
+- The ~15s per-run measurement (2026-09-28, warm Docker) and the 240s spawn bound
+  ride in the test; durations are environment-bound, not performance claims.
+- **Reporter caveat:** vitest 5 defaults to the 'minimal' reporter under agent env
+  and silences console output from PASSING tests; `t5-false-claim-red.log` was
+  captured with those env vars unset (disclosed in its first line) so the log shows
+  the child output a human operator's terminal shows.
+
+## Remaining risks
+
+- The false claim demonstrated is one class (a pytest invocation finding no tests,
+  exit 4, no summary line); other non-executing commands are not enumerated.
+- The re-onboarding hazard means the committed seed must never gain a `.git`
+  directory; the test copies plain files only (structural).
+
+## Unknowns closed or deferred
+
+| Unknown | Status |
+|---|---|
+| Does onboarding need a remote or gh? | **Closed** — local-only repo with no remote onboards fine (live probe 2026-09-28). |
+| Do the no-flags defaults really apply on the undocumented setup? | **Closed** — test B green; profile records exactly the `optValue` defaults. |
+| Can a used fixture be reused across runs? | **Closed, no** — verified live; per-run repos are a requirement, not hygiene. |
+
