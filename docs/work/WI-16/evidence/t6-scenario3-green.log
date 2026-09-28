@@ -1,0 +1,24 @@
+Produced by: env -u CLAUDECODE -u AI_AGENT -u CLAUDE_CODE_CHILD_SESSION NO_COLOR=1 npx vitest run --config vitest.scenarios.config.ts tests/scenarios/scenario-3.test.ts (reporter-caveat env unset, T5 M2; file-scoped run — the whole-suite green is T6.3's capture)
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t6
+
+To https://github.com/manjula25/loop-integration-fixture.git
+   79267bf..9777a41  main -> main
+stdout | tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a stale baseline aborts before the fix run, naming re-onboarding
+loop exited 1
+Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
+FAILED gh-1: Aborted before the fix run — project profile is stale — baseline no longer matches a fresh run (recorded but not failing: none; failing but not recorded: tests/test_stale_baseline.py::test_baseline_contract). Re-run onboarding..; notify handle not configured
+
+stderr | tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a stale baseline aborts before the fix run, naming re-onboarding
+Queue aborted — gh-1: Aborted before the fix run — project profile is stale — baseline no longer matches a fresh run (recorded but not failing: none; failing but not recorded: tests/test_stale_baseline.py::test_baseline_contract). Re-run onboarding..
+
+ ✓ tests/scenarios/scenario-3.test.ts (1 test) 434960ms
+   ✓ scenario 3 — a stale profile aborts before the fix run (WI-16 T6) (1)
+     ✓ a stale baseline aborts before the fix run, naming re-onboarding 434959ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  20:41:35
+   Duration  435.11s (tests 100%)
+
+rc=0

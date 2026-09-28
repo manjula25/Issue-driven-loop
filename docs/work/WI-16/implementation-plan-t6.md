@@ -143,9 +143,12 @@ Structure:
   user.email=manjula25+loop@users.noreply.github.com` (fixture-reset's loop identity) and pushes
   `origin main`; asserts `git rev-parse HEAD` equals the remote's post-push main.
 - **Test 1 — "a stale baseline aborts before the fix run, naming re-onboarding":**
-  `resetFixture()`; capture `shaBefore = gitIn(["rev-parse", "origin/main"])`;
-  `seedStaleness({"tests/test_stale_baseline.py":
-  <the failing-contract test>}, "seed: a baseline test the profile does not know")`; run;
+  `resetFixture()`; `seedStaleness({"tests/test_stale_baseline.py":
+  <the failing-contract test>}, "seed: a baseline test the profile does not know")`; capture
+  `shaBefore = gitIn(["rev-parse", "origin/main"])` **after the seed** *(corrected in place
+  2026-09-28, T6.1's live observation: the plan originally captured it before the seed, which
+  the seed's own commit then falsified — the tip the no-spend assertion compares against is the
+  staleness seed itself)*; run;
   print the child's report lines (D1); then assert:
   - stdout contains `Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 |
     skipped-merged: 0 | not-admitted: 0`;
