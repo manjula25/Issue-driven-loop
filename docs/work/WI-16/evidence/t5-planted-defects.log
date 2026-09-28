@@ -1,0 +1,89 @@
+# WI-16 T5 planted-defect RED→GREEN (FR-001, plan D4)
+# Plant: scripts/onboard.ts:63 — the parseSuiteBaseline call wrapped in a swallowing try/catch
+# (the entry wiring, which no unit test imports; uncommitted, reverted byte-identically):
+#   let baselineFailures: string[];
+#   try {
+#     baselineFailures = parseSuiteBaseline(suite.exitCode, suite.stdout);
+#   } catch {
+#     baselineFailures = []; // t5 planted defect: a swallowed gate lets false claims reach the profile
+#   }
+# Nothing else in the file changed. A swallowed SuiteDidNotRunError lets onboarding exit 0 and
+# write the profile for a test command that executed nothing — exactly the doc-rot the gate exists for.
+
+# Unit surface against the planted tree (the defect it does NOT see — that is the point):
+#   $ npm test
+--- npm test against the planted tree (verbatim tail) ---
+ Test Files  10 passed (10)
+      Tests  287 passed (287)
+   Start at  17:35:01
+   Duration  1.77s (transform 43%, tests 29%, import 27%, worker 2%)
+# rc=0 (npm test; captured as rc=${PIPESTATUS[0]} on the line immediately after the command)
+
+# Scenario surface against the planted tree:
+#   $ npx vitest run --config vitest.scenarios.config.ts tests/scenarios/scenario-2.test.ts
+--- scenario RED against the planted tree (verbatim) ---
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5
+
+stdout | tests/scenarios/scenario-2.test.ts > scenario 2 — onboarding against two seeded setups (WI-16 T5) > a documentation claim that does not execute never reaches the profile
+onboarding failed as designed — child output:
+suite exit: 4
+baseline failures (0):
+expected duration: ~4s
+profile written: /tmp/loop-t5-xfySX4/.loop-harness/profile.json
+
+
+ ❯ tests/scenarios/scenario-2.test.ts (3 tests | 1 failed) 92909ms
+   ❯ scenario 2 — onboarding against two seeded setups (WI-16 T5) (3)
+     × a documentation claim that does not execute never reaches the profile 30702ms
+
+⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯
+
+ FAIL  tests/scenarios/scenario-2.test.ts > scenario 2 — onboarding against two seeded setups (WI-16 T5) > a documentation claim that does not execute never reaches the profile
+AssertionError: expected +0 not to be +0 // Object.is equality
+ ❯ tests/scenarios/scenario-2.test.ts:134:30
+    132|         `onboarding failed as designed — child output:\n${run.stdout ?…
+    133|       );
+    134|       expect(run.status).not.toBe(0);
+       |                              ^
+    135|       expect(run.stdout + run.stderr).toContain("SuiteDidNotRunError");
+    136|       expect(run.stdout + run.stderr).toContain("no pytest summary lin…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  17:36:53
+   Duration  93.15s (tests 100%)
+
+rc=1
+# rc=1, captured as rc=${PIPESTATUS[0]} on the line immediately after the command. The child
+# output printed by the test is the plant's signature: `suite exit: 4` yet `baseline failures (0)`
+# and `profile written:` — the swallowed gate let the false "Fast unit subset" claim reach the
+# profile, so onboarding exited 0 and the test's `expect(run.status).not.toBe(0)` failed.
+# Tests A and B (the documented and undocumented green onboardings) stayed green.
+
+--- byte-identical revert proof (before the green re-run) ---
+$ git checkout -- scripts/onboard.ts
+rc=0
+$ git diff --quiet -- scripts/onboard.ts
+rc=0
+# (0 = byte-identical to HEAD; `git status --porcelain` printed nothing, rc=0 — clean tree)
+
+--- scenario GREEN after the revert (verbatim) ---
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t5
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  17:38:56
+   Duration  91.77s (tests 100%)
+
+rc=0
+# rc=0 (3/3 green — the failure was the plant, not the harness). Typecheck after the revert:
+#   $ npm run typecheck → tsc --noEmit, no output, rc=0 (the plant may have broken types; the
+#   revert restored them).
