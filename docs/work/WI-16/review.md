@@ -1,175 +1,102 @@
-# WI-16 T6 — Review
+# WI-16 T7 — Review
 
 Specification review first, then code-quality review, both read-only, per the implement
 lifecycle. Written for the exact candidate below; if the candidate changes, both rerun.
-(The T5 review this file replaces is preserved in git history and in merged PR #28.)
+(The T6 review this file replaces is preserved in git history and in merged PR #29.)
 
-The reviews ran as three specification rounds and two code-quality rounds: the first
-spec PASS (at `b145f0d`) surfaced two adjacent record corrections that were folded in
-by amending the records commit; the first code-quality round (at `8504434`) returned
-NEEDS_FIXES on one important finding plus five minors, fixed at `5e67a49` with the
-whole-suite green re-captured at that identity; both axes then re-approved the final
-candidate. Ledger entry 15 records the chain.
+The reviews ran as two rounds each: the first specification review PASSed at `4a2d97f`
+(code identity `d389b94`); the first code-quality round APPROVED the same candidate with
+three minors, two of them records defects (a stale line anchor and a truncated fragment
+in `verification.md`), corrected in place at `0af3ae3` — a records-only change that
+invalidated both verdicts by the lifecycle's own rule, so both axes re-ran at the new
+identity: specification **PASS** and code-quality **APPROVED**, no new findings. Ledger
+entry 17 (with its review-round paragraph) records the chain.
 
 ## Candidate identities
 
-- **Fixed point:** `96b28a8a7e85b7b6fd6a9d305ec4049b6b0eb6f9` (T5 merged via PR #28)
-- **Candidate (implement-lifecycle reviews):** `a4cdaa11066f78ea0ff8fd1cce17808fbcc058c3`
-  (branch `wi-16-t6` at the time — superseded as HEAD by the records commits below, which
-  touch `docs/work/` only) —
-  code identity `5e67a49d98721d809854d5bb929f51416ce9ed91` (the review-fix commit); the
-  commit after it is records only, amended twice to fold in reviewer observations.
-- **Candidate (stage-4 four-axis gate):** `9d1bdc23e412499bfee857d7111be04cab734054` —
-  see the gate section at the end.
-- Branch history: `903a71b` (plan) → `5357a5b` (T6.1, test 1) → `1e60411` (T6.2, test 2)
-  → `8504434` (records, amended from `b145f0d`) → `5e67a49` (code-quality fixes) →
-  `a4cdaa1` (review-fix records, amended from `debc91f`).
+- **Fixed point:** `12a3dce` (T6 merged via PR #29)
+- **Candidate (implement-lifecycle reviews):** `0af3ae3` (branch `wi-16-t7` HEAD) —
+  code identity `d389b94` (the only commit touching `src/`); everything after it is
+  records only.
+- Branch history: `e906547` (plan) → `9a591b1` (ponytail rec 1 applied) → `d389b94`
+  (T7.1, the two test edits + evidence log) → `4a2d97f` (T7.2 records) → `0af3ae3`
+  (review-fix records).
 - Ancestry verified (`git merge-base --is-ancestor` rc 0); range non-empty; working tree
   clean at review time (untracked `.env` excepted, never committed).
 
 ## Changed-path accounting
 
-`git diff --name-status 96b28a8..a4cdaa1` — 7 files, 944 insertions / 1 deletion
-(the deletion is CLAUDE.md's replaced scenarios sentence):
+`git diff --name-status 12a3dce..0af3ae3` — 5 files, all accounted for:
 
 | Status | Path |
 |---|---|
-| M | `CLAUDE.md` (scenarios sentence amended — Scenario 3 named) |
-| A | `docs/work/WI-16/evidence/t6-final-suite-green.log` |
-| A | `docs/work/WI-16/evidence/t6-scenario3-green.log` |
-| M | `docs/work/WI-16/implementation-notes.md` (ledger entries 14 and 15 appended) |
-| A | `docs/work/WI-16/implementation-plan-t6.md` |
-| M | `docs/work/WI-16/verification.md` (T6 section appended, then amended in place) |
-| A | `tests/scenarios/scenario-3.test.ts` |
+| M | `src/loop.test.ts` (two edits: retitle + the line-350 prose-regex deletion) |
+| A | `docs/work/WI-16/evidence/t7-unit-green.log` |
+| A | `docs/work/WI-16/implementation-plan-t7.md` (incl. the ponytail rec 1 note) |
+| M | `docs/work/WI-16/implementation-notes.md` (ledger entry 17 + review-round paragraph + follow-up finding, appended) |
+| M | `docs/work/WI-16/verification.md` (T7 section appended; two minors corrected in place at `0af3ae3`) |
 
-Through `a4cdaa1` that is the whole set. The full range to the stage-4 candidate,
-`96b28a8..9d1bdc2`, carries an **eighth** file — this `review.md` itself (committed at
-`dec6989`), a review-time records file.
+**No production source is in the range** — `src/loop.ts` untouched; the ticket is
+test-only and `src/loop.test.ts` is the ticket's explicit target. No `CLAUDE.md` change:
+no surface added or removed (the plan's recorded decision, confirmed correct by the
+specification review).
 
-**No file under `src/` is in the range** — verified by both reviewers independently
-(`git diff --stat 96b28a8..a4cdaa1 -- src/` empty). The ticket's FR-003/FR-008 boundary
-holds: the implemented behavior was asserted, never adjusted; the one observed defect
-(the cosmetic `Re-run onboarding..` double period from `src/loop.ts:1009`) is recorded
-in verification.md's remaining risks, not fixed here.
+## Implement-lifecycle verdicts
 
-## Axis verdicts
+### Specification fidelity — PASS (final round at `0af3ae3`)
 
-### Specification fidelity — PASS (final round at `a4cdaa1`)
+All four ticket criteria verified against the artifacts, first round at `4a2d97f` and
+re-confirmed at `0af3ae3`: criterion 1 — the code diff is exactly two hunks, the removed
+line is exactly the plan-named regex at old-file line 350, zero `toMatch` remains in the
+describe; criterion 2 — the nine retained `toContain` pins map one-to-one onto the
+classification table (its one home in `verification.md`, per ponytail rec 1 — the
+ticket's literal "implementation notes" wording is superseded by the approved plan, a
+documented relocation both rounds flagged as adjacent, not a defect); criterion 3 — the
+`.loop-harness/` half verified mechanically enforced (the nesting guard at
+`src/loop.ts:924`, tested from `src/loop.test.ts:3213`) and the full diff-scope half
+recorded as a finding in the follow-ups and the verification's evidence boundary — the
+ticket's explicit either/or, honest arm taken; criterion 4 — both reviewers re-ran the
+suite themselves: 10 files / 287 tests rc=0, typecheck rc=0, grep for the removed regex
+rc=1. The plan's stop conditions were not hit (count never below 287; every retained
+token honestly classifiable).
 
-Every acceptance criterion mapped to evidence: criterion 1 → the pinned mismatch-arm
-strings (`Re-run onboarding`, the failing-but-not-recorded test id) verified by the
-reviewer against `src/loop.ts:988–991` and the live log; criterion 2 → the no-spend
-read-backs with tip equality doubling as the no-merged-PR proof (ponytail rec 1);
-criterion 3 → the unreadable-arm string over the exit-zero `echo baseline-green` run;
-criterion 4 → the seven-file accounting above. The plan's recorded deviations were
-confirmed real and documented: D2 (the delivered seed is a pushed failing test — the
-ticket's three suggested seeds all land in the unreadable arm, verified against
-`SUITE_SUMMARY_RE`), D4 (FR-009's "deliberately not exercised" note superseded in one
-respect by WI-14's escalation, asserted as positive evidence; recorded as an
-observation, not a spec edit), D5 (no planted-defect pair, reasoning recorded).
-Verification figures match their evidence logs (focused 2/2 at 78.53s rc=0; whole
-suite 4 files / 11 tests, 432.85s, rc=0, at code identity `5e67a49`).
+### Code quality — APPROVED (final round at `0af3ae3`)
 
-Adjacent observations across the rounds, and their dispositions:
-- The plan header's "3 files / 8 tests" disagreed with `t5-final-suite-green.log`
-  (9) — **corrected in place** (numeral-beside-its-list; the repo's own lesson).
-- Verification claim 1's "green first try" could read as claiming the test passed
-  first try when the run was red on the plan's pre-seed `shaBefore` capture —
-  **rephrased in place**.
-- Verification claim 6's "run at the T6.3 commits" anchor lagged the twice-amended
-  records commit — **re-anchored in place**.
-- The superseded single-test T6.1 capture survives only in git history by design —
-  accepted, no change (stated in plan T6.2).
-- Test 1's test-side label removal departs from the plan's "the label stays until a
-  later verified delivery" fact — accepted: test machinery on the fixture, disclosed
-  in the test comment, verification claim 5, and ledger 15; no harness-behavior claim.
+The first round's three minors and their dispositions:
 
-### Code quality — APPROVED (final round at `a4cdaa1`)
+1. Test 2's retitled "with staged attachments" describes setup, not a causally
+   necessary condition — the `.loop-harness/` token comes from prompt step 4
+   (`src/loop.ts:550`), which `buildFixPrompt` emits unconditionally outside the
+   attachments-conditional section. **Accepted as-is**, rationale recorded in ledger
+   entry 17: the fixture stays as the only exercise of `buildFixPrompt`'s
+   `PromptAttachments` branch, and the structure is pre-existing.
+2. The classification table's `.loop-harness/` row ended on a fragment — **corrected
+   in place** at `0af3ae3`.
+3. The nesting-guard anchor read `3219+` where the test's `it(` line is 3213 —
+   **corrected in place**, proof `sed -n '3213p' src/loop.test.ts`, re-run and
+   confirmed by both rerun reviewers.
 
-The first round's NEEDS_FIXES finding, fixed at `5e67a49` and confirmed fixed by the
-re-review against the current file, not the diff alone: **test 1's escalation
-read-backs were residue-vulnerable** — `resetFixture()` never deletes comments or
-labels, so the "latest comment" and "labels include" assertions could match a prior
-run's artifacts (a failed comment post would have read green). Now the label is read
-and removed test-side before the run only when actually worn (WI-15's
-read-before-remove shape) and only comments newer than a pre-run baseline count.
-The five minors fixed alongside: the `expectNoSpend` factoring (scenario-1
-precedent), per-test bounds above the 1_080_000 spawn timeout (spawnSync blocks the
-event loop — a lower vitest bound cannot bind), the comment no-@ check on the stdout
-regex, the `seedStaleness` empty-ls-remote guard, and the timeout-comment figures.
-One fix attempt was red in setup (gh `--json labels` returns an object, not an
-array) — disclosed in the evidence log's first line and ledger 15, then green.
-Residual nit, explicitly not a finding: the timeout comment names the cold figures
-without the warm re-run's ~40s — the bound is correctly derived from the worst case
-and the spread is disclosed in verification.md.
+The rerun round verified the corrections follow the standing-claims rule (prior claims
+quoted, re-runnable proof named), the ledger got a pure append (12 lines, zero
+deletions), the nine-token count matches the assertions in the file, and the suite is
+green at HEAD. No new findings.
 
 ## Evidence and risk integrity
 
-- Whole-suite green re-captured AT the review-fix code identity (`5e67a49`) — the code
-  change invalidated the earlier capture, and "a green at a superseded identity is not
-  a green at the candidate" is stated in the log's own disclosure line. The cold
-  pre-fix capture (3448.46s) remains in git history; the 8x duration gap is disclosed
-  as cache warmth in three places.
-- Typecheck rc=0 and unit 287/287 rc=0 recorded at every checkpoint; accepted from the
-  ledgers by both reviewers, not re-executed by them (their scopes were read-only on
-  the shared fixture; the figures are internally consistent across all records).
-- The pre-amend identity `b145f0d` named in ledger 15 is no longer reachable in branch
-  history (amended into `8504434`); its role is taken from the ledger's disclosure,
-  not independently verified against the reflog — noted by the code-quality reviewer.
+- Unit + typecheck figures were re-executed independently by both first-round reviewers
+  and both rerun reviewers (287/287 rc=0, typecheck rc=0 at every round) — the strongest
+  form the evidence axis can ask for on a unit-surface change.
+- The pre-edit baseline (287/287 at `12a3dce`) is taken from the plan and the evidence
+  log, not re-run at the base by any reviewer; it is structurally certain (one assertion
+  line and one title string changed, no `it` block touched) and the post-edit count
+  matches. Disclosed as a formality by both reviewers, not a doubt.
+- The integration/scenarios suites are unaffected by construction: nothing in their
+  import graph changed (`src/loop.test.ts` and `docs/work/` only), so T6's whole-suite
+  captures remain applicable evidence for those surfaces.
 
 ## Unverified evidence
 
-- The warm-cache explanation for the duration spread is a disclosed environmental
-  claim neither reviewer could independently reproduce; it underwrites no acceptance
-  criterion.
-- Scenario durations (cold and warm alike) are environment-bound, not performance
-  claims.
-
-## Stage-4 four-axis gate — candidate `9d1bdc2` (2026-09-29)
-
-The post-verification `code-review` gate: four read-only reviewers, one per axis,
-dispatched concurrently with no access to each other's context, over
-`96b28a8..9d1bdc2` (eight files — the seven above plus this review.md). Verdicts kept
-separate, never merged:
-
-1. **Repository standards — PASS.** CLAUDE.md honesty rule verified at file level
-   (every claim in the amended scenarios sentence checked against the code);
-   ledger-appended / corrected-in-place conventions hold; numerals beside lists
-   verified against their enumerations (the plan's remaining "3 files / 8 tests"
-   occurrences are the no-T5 conditional branch and are arithmetically consistent);
-   test idiom, timeout posture, secrets discipline, loop identity, and the
-   Co-Authored-By trailer on all commits all conform.
-2. **Specification fidelity — PASS.** All four ticket criteria re-verified
-   independently against the file and logs, agreeing with the implement-lifecycle
-   review's PASS; D1–D5 confirmed real and honestly recorded (D2's arm analysis
-   re-proven from `SUITE_SUMMARY_RE` and the routing at `src/loop.ts:981–982`).
-3. **Evidence and risk integrity — PASS.** The axis re-ran the proving commands
-   itself: typecheck rc=0, unit 10 files / 287 tests rc=0, both range diffs, the
-   7-file/944/1 shortstat, and ancestry checks — every printed command produces
-   what the record says. The whole-suite capture's applicability argument verified
-   (docs-only diff since `5e67a49`; timestamps internally consistent; rc placement
-   correct). Three adjacent findings, all stale anchors/attribution in records —
-   fixed in place this commit: verification claim 4's "seven files at HEAD" anchor,
-   the 435s attribution (the figure is ledger 14's superseded first-green; the
-   committed pre-fix log records 431.3s for that slot), and this file's own "HEAD"
-   wording (above).
-4. **Unnecessary complexity — PASS.** Nothing built beyond the criteria and the
-   approved plan; the residue-proofing is the minimal honest form (comments have
-   order — a count baseline suffices; labels have no order — read-then-remove is
-   the only honest shape, applied once); `expectNoSpend` is exactly criterion 2's
-   list; the two tests are proportional. Adjacent taste observations (one gh
-   round-trip saveable in test 1's baselines; a belt-and-braces stdout filter in
-   `printReportLines`; ledger/review narrative overlap within the repo's own
-   convention) recorded, none acted on.
-
-Adjacent observations accepted without change across the axes: test 2's reliance on
-test 1 for the no-@ output assertions (its FAILED line's `notify handle not
-configured` proves the absent-handle arm regardless); CLAUDE.md's sentence
-attributing both escalation assertions to the file rather than each test (disclosed
-in the test comment and verification.md); the reflog-unreachable pre-amend identity
-`b145f0d` (below). No blocking findings on any axis.
-
-Commits landing after the implement verdicts (`dec6989`, `9d1bdc2`, and this one)
-are records-only — the implement verdicts describe `a4cdaa1` and the four-axis
-verdicts describe `9d1bdc2`; this commit's own corrections are the ones the
-evidence axis itself prescribed.
+- The prior rounds' verdict texts at `4a2d97f` exist only in the controller's context
+  and this record (the rerun specification reviewer's observation); the rerun verdicts
+  at `0af3ae3` re-proved everything material first-hand, so nothing rests on the
+  unrecorded originals.
