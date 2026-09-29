@@ -66,7 +66,7 @@ fixed here — it would be new `src/` behavior.
 
 ## Tasks
 
-### T7.1 — remove the prose assertion, classify the interface pins
+### T7.1 — remove the prose assertion; classify in the records, not the code
 
 **File:** `src/loop.test.ts` (only).
 
@@ -75,13 +75,11 @@ fixed here — it would be new `src/` behavior.
 - Retitle test 2 from "with staged attachments, instructs the agent to commit only the
   fix and test — never anything under .loop-harness/" to a title naming what it now
   pins — e.g. "with staged attachments, still carries the `.loop-harness/` token the
-  nesting guard owns".
-- Add the classification comment: each retained token (the seven from test 1 plus
-  `` `.loop-harness/` ``) named with its interface reason (harness-produced /
-  harness-parsed / profile-pinned / nesting-guard-owned), and one line recording that
-  the prose assertion was removed under FR-012 with its behavior's disposition (the
-  nesting guard enforces the `.loop-harness/` half; the full-scope half is a recorded
-  finding, not a test).
+  nesting guard owns". *(Ponytail rec 1 applied 2026-09-29: the plan originally also
+  added an in-code classification comment block over the tests; the ticket's criterion
+  2 places the classification in the implementation notes/records, so the comment was
+  a second copy that would drift — the classification table lives once, in the T7.2
+  verification record.)*
 
 **Expected observation:** `npm test` green with **287 passed (287)** still — a
 removed assertion removes no test (the test itself survives, one assertion fewer);
@@ -97,10 +95,11 @@ typecheck` rc=0.
 
 - **`verification.md`** — append the T7 section: the criteria→evidence table (criterion
   1 → the diff review showing no ordinary-language regex over the prompt, each
-  remaining assertion classified; criterion 2 → the classification comment block;
-  criterion 3 → the recorded finding with the nesting-guard half's real home; criterion
-  4 → unit + typecheck figures), and the evidence boundary (interface pins are not
-  behavioral tests — FR-012 says so rather than pretending otherwise).
+  remaining assertion classified; criterion 2 → the classification table, living here
+  and only here per ponytail rec 1; criterion 3 → the recorded finding with the
+  nesting-guard half's real home; criterion 4 → unit + typecheck figures), and the
+  evidence boundary (interface pins are not behavioral tests — FR-012 says so rather
+  than pretending otherwise).
 - **`implementation-notes.md`** — append ledger entry 17; add the D2 finding to the
   work item's open follow-ups.
 - **`CLAUDE.md`** — no change: no surface is added or removed; the suite's assertions
