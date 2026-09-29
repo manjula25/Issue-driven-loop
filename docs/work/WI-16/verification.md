@@ -642,7 +642,7 @@ the edit; the controller re-ran the post-edit suite itself.
 |---|---|---|---|
 | 1 | Criterion 1 — no assertion on the prompt matches prose with an ordinary-language regex, and every remaining assertion is classified | the diff (`12a3dce..d389b94`, `src/loop.test.ts` only) + the classification table below | exactly two hunks: the retitle and the line-350 deletion; zero `toMatch` remains in the describe (grep rc=1); every retained assertion is a `toContain` pin classified in the table |
 | 2 | Criterion 2 — every retained assertion names a harness-produced or harness-parsed token, classification stated in the records | the classification table below — living **here and only here** (ponytail rec 1, 2026-09-29: an in-code comment block would be a second copy that drifts) | all nine retained tokens classified; none requires a phrasing defense |
-| 3 | Criterion 3 — the removed assertion's behavior is enforced where it lives, or the gap is recorded | code facts + the finding below | the `.loop-harness/` half IS mechanically enforced — the nesting guard (`pathCommittedOnBranch`, `src/loop.ts:924`, `git ls-tree`) tested at `src/loop.test.ts:3219+`; the full diff-scope half ("only the fix and the reproduction test") is **instructed** (prompt step 4, `src/loop.ts:550`) and pre-merge-reviewed, but never mechanically enforced — recorded as a finding and added to the work item's follow-ups, not silently dropped |
+| 3 | Criterion 3 — the removed assertion's behavior is enforced where it lives, or the gap is recorded | code facts + the finding below | the `.loop-harness/` half IS mechanically enforced — the nesting guard (`pathCommittedOnBranch`, `src/loop.ts:924`, `git ls-tree`) tested at `src/loop.test.ts:3213+`; the full diff-scope half ("only the fix and the reproduction test") is **instructed** (prompt step 4, `src/loop.ts:550`) and pre-merge-reviewed, but never mechanically enforced — recorded as a finding and added to the work item's follow-ups, not silently dropped |
 | 4 | Criterion 4 — `npm test` and `npm run typecheck` green | `evidence/t7-unit-green.log` | 10 files / 287 tests rc=0 (identical to the pre-edit count); typecheck rc=0 |
 
 ### The classification table (the one home, per ponytail rec 1)
@@ -660,12 +660,19 @@ phrasing of an instruction.
 | `reproTestPath(issue)` | a path the harness constructs (constraint 4's deterministic home) and later reads back: the verification sandbox runs it via `{test}` substitution |
 | `LOOP_IDENTITY.name` / `LOOP_IDENTITY.email` | the machine commit identity the harness itself defines and the fix commits must carry |
 | `<red-evidence>` / `<green-evidence>` | wrapper tags under a contract the harness parses back (`extractEvidence` throws without them) — the strongest interface there is |
-| `` `.loop-harness/` `` | the directory the harness owns (stages attachments into, `copyToWorktree`) — the token the nesting guard's prompt-side counterpart |
+| `` `.loop-harness/` `` | the directory the harness owns (stages attachments into, `copyToWorktree`) — the token is the prompt-side counterpart of the nesting guard |
 
 Removed: `expect(prompt).toMatch(/commit only the fix and the reproduction test/i)` —
 an ordinary-language regex over a sentence the model is asked to read. Phrasing, not
 interface: the harness never parses this sentence back, and rewording the instruction
 (a behavior-preserving act) would have broken the test.
+
+*(Corrections 2026-09-29, code-quality review minors 2–3: criterion 3's row
+previously said the guard test lives at `src/loop.test.ts:3219+` — the test's `it(`
+line is 3213, proved by `sed -n '3213p' src/loop.test.ts` printing the
+"aborts loudly with zero spend when main has .loop-harness committed (nesting guard)"
+line; and the `.loop-harness/` table row previously ended on the fragment "the token
+the nesting guard's prompt-side counterpart", now completed.)*
 
 ## Evidence boundary and non-claims
 

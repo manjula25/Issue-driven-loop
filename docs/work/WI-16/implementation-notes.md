@@ -532,6 +532,18 @@ prose-ish `toMatch` regexes elsewhere in the suite (harness-generated failure an
 summary strings, not prompt assertions — out of FR-012's scope); adjacent observation,
 verified at lines 378/387/621/2230/2989 before recording.
 
+Review round (same day): specification review **PASS** and code-quality review
+**APPROVED** at `4a2d97f`, both with zero blocking findings; the code-quality pass
+returned three minors, two of them records defects in the verification section —
+the nesting-guard anchor `3219+` (really `3213`, re-proved by
+`sed -n '3213p' src/loop.test.ts`) and a truncated fragment in the classification
+table's `.loop-harness/` row — corrected in place in the same commit as this note,
+which changed the records identity and triggered the lifecycle's review rerun on the
+new candidate. The third minor (test 2's "with staged attachments" title describing
+setup rather than a causally necessary condition — the token comes from prompt step 4
+unconditionally) is recorded here as accepted-as-is; the fixture stays as the only
+exercise of `buildFixPrompt`'s attachments branch.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
