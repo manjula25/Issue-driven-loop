@@ -1,0 +1,28 @@
+# WI-16 T7 — unit + typecheck green (controller-captured, worktree wi-16-t7)
+# Candidate: src/loop.test.ts working tree at the two plan edits (retitle + line-350
+# deletion), committed immediately after this capture as the T7.1 commit.
+# Commands run by the controller from the worktree root; rc captured on the line
+# immediately after each command.
+
+## npm test
+rc=0
+ Test Files  10 passed (10)
+      Tests  287 passed (287)
+   Start at  15:12:49
+   Duration  1.47s (transform 39%, tests 33%, import 27%, worker 2%)
+
+## npm run typecheck
+rc=0
+
+> software-factory-loop@0.0.0 typecheck
+> tsc --noEmit
+
+## grep -n "toMatch(/commit only" src/loop.test.ts
+rc=1
+(no matches — the prose regex is gone)
+
+## Post-edit describe block (src/loop.test.ts:326–352)
+Both tests carry only `toContain` assertions over interface tokens:
+ello-world, pip install -e ".[test]", pytest -q, reproTestPath(issue),
+LOOP_IDENTITY.name, LOOP_IDENTITY.email, <red-evidence>, <green-evidence>,
+and `.loop-harness/`. Zero `toMatch` remains in the describe.
