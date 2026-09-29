@@ -1,4 +1,5 @@
-Produced by: npm run test:scenarios (background run, 2026-09-29 09:49:54–10:47:22, worktree wi-16-t6; agent-env minimal reporter silences passing tests' console output — the scenarios' own report lines are in evidence/t6-scenario3-green.log and the T3–T5 logs; the git push lines below are the reset machinery's child-process output passing through). Verbatim below, rc appended by the wrapper on the line immediately after the command.
+Produced by: npm run test:scenarios (background run, 2026-09-29 14:04:40–14:11:53, worktree wi-16-t6, code identity 5e67a49 — the code-quality-review-fix state; supersedes the pre-fix capture at 8504434, which remains in git history). Agent-env minimal reporter silences passing tests' console output — the scenarios' own report lines are in evidence/t6-scenario3-green.log and the T3–T5 logs; the git push lines below are the reset machinery's child-process output passing through. Duration is a warm-cache figure (432.85s vs the cold 3448.46s of the pre-fix run — gh API latency dominated that one). Verbatim below, rc appended by the wrapper on the line immediately after the command.
+
 
 > software-factory-loop@0.0.0 test:scenarios
 > vitest run --config vitest.scenarios.config.ts
@@ -6,19 +7,18 @@ Produced by: npm run test:scenarios (background run, 2026-09-29 09:49:54–10:47
 
  RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t6
 
-Cloning into '/tmp/loop-integration-fixture'...
+remote: 
+remote: Create a pull request for 't3/hand-mutation' on GitHub by visiting:        
+remote:      https://github.com/manjula25/loop-integration-fixture/pull/new/t3/hand-mutation        
+remote: 
 To https://github.com/manjula25/loop-integration-fixture.git
-   2b82c88..2d79510  main -> main
+   f7422d7..fa3a457  main -> main
 To https://github.com/manjula25/loop-integration-fixture.git
-   4238f20..818bb4e  main -> main
-remote:
-remote: Create a pull request for 't3/hand-mutation' on GitHub by visiting:
-remote:      https://github.com/manjula25/loop-integration-fixture/pull/new/t3/hand-mutation
-remote:
+   4c57e25..9593ea2  main -> main
 
  Test Files  4 passed (4)
       Tests  11 passed (11)
-   Start at  09:49:54
-   Duration  3448.46s (tests 100%)
+   Start at  14:04:40
+   Duration  432.85s (tests 100%)
 
 rc=0

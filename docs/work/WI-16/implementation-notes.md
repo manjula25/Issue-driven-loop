@@ -463,6 +463,40 @@ CLAUDE.md lesson (a numeral beside its list) caught at records time and correcte
 place in the plan rather than repeated. Typecheck rc=0 and 287/287 rc=0 re-run fresh at
 the records state.
 
+## 15. T6 reviews — spec PASS with two record corrections, code-quality NEEDS_FIXES, the residue fix — 2026-09-29
+
+**Specification review** (read-only leaf, `96b28a8..b145f0d`): PASS, no blocking
+findings, three adjacent observations. Two were the repo's own record-defect
+classes and were fixed by amending the records commit (`b145f0d` → `8504434`):
+observation 1 — the plan header said "3 files / 8 tests" while
+`t5-final-suite-green.log` records 9 (numeral-beside-its-list, a third instance
+the two earlier corrections had missed); observation 2 — verification claim 1's
+"green first try" read as claiming the test passed first try when the run itself
+was red on the plan's pre-seed `shaBefore` capture. Observation 3 (the superseded
+T6.1 single-test capture lives in git history by design) accepted as-is. The
+changed candidate invalidated the verdict; the delta re-review PASSED at
+`8504434`.
+
+**Code-quality review** (read-only leaf, `96b28a8..8504434`): NEEDS_FIXES on one
+important finding — **test 1's escalation read-backs were residue-vulnerable**:
+`resetFixture()` never deletes comments or labels, so on every rerun the
+"latest comment" and "labels include" assertions could match a PRIOR run's
+artifacts (the vacuous-check lesson; a failed comment post would have read
+green). Exactly the hazard test 2 documents and fixes for itself. Fixed at
+`5e67a49` along with five minors: the label is read and removed test-side before
+the run (WI-15's read-before-remove shape) and only comments newer than a
+pre-run baseline count; the comment no-@ check uses the stdout check's regex;
+the duplicated no-spend read-back block is factored into `expectNoSpend`
+(scenario-1 precedent); per-test bounds raised to 1200s, above the CLI spawn's
+1080s (spawnSync blocks the event loop — a lower vitest bound cannot bind, the
+inversion T3/T4 never had); `seedStaleness` surfaces its own diagnostic on an
+empty ls-remote. One fix attempt was red in setup at 13s — `gh issue view --json
+labels` returns `{"labels": [...]}`, not an array (disclosed in the evidence
+log's first line) — then green: focused 2/2 in 78.53s, whole suite 4/11 in
+432.85s rc=0, typecheck rc=0, unit 287/287 rc=0, all warm-cache figures (the
+cold pre-fix whole suite was 3448.46s — the 8x gap is cache warmth, not code).
+Both reviews re-ran on the final candidate; verdicts in `review.md`.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
