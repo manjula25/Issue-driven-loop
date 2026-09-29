@@ -1,157 +1,168 @@
-# WI-16 T7 — Review
+# WI-16 T8 — Review
 
 Specification review first, then code-quality review, both read-only, per the implement
 lifecycle. Written for the exact candidate below; if the candidate changes, both rerun.
-(The T6 review this file replaces is preserved in git history and in merged PR #29.)
+(The T7 review this file replaces is preserved in git history and in merged PR #30.)
 
-The reviews ran as two rounds each: the first specification review PASSed at `4a2d97f`
-(code identity `d389b94`); the first code-quality round APPROVED the same candidate with
-three minors, two of them records defects (a stale line anchor and a truncated fragment
-in `verification.md`), corrected in place at `0af3ae3` — a records-only change that
-invalidated both verdicts by the lifecycle's own rule, so both axes re-ran at the new
-identity: specification **PASS** and code-quality **APPROVED**, no new findings. Ledger
-entry 17 (with its review-round paragraph) records the chain.
+Both reviews ran once, on the same candidate: specification **PASS** (zero blocking,
+three adjacents) and code-quality **APPROVED** (zero critical/important, four minors,
+all adjacent) at doc identity `e3e1270` with the evidence log riding at `bb1f8ce`. No
+candidate change followed, so neither verdict was invalidated. Ledger entry 19 records
+the chain.
 
 ## Candidate identities
 
-- **Fixed point:** `12a3dce` (T6 merged via PR #29)
-- **Candidate (implement-lifecycle reviews):** `0af3ae3` (branch `wi-16-t7` HEAD at
-  review time — superseded as HEAD by the records commits below, which touch
-  `docs/work/` only) —
-  code identity `d389b94` (the only commit touching `src/`); everything after it is
-  records only.
-- Branch history: `e906547` (plan) → `9a591b1` (ponytail rec 1 applied) → `d389b94`
-  (T7.1, the two test edits + evidence log) → `4a2d97f` (T7.2 records) → `0af3ae3`
-  (review-fix records).
-- Ancestry verified (`git merge-base --is-ancestor` rc 0); range non-empty; working tree
-  clean at review time (untracked `.env` excepted, never committed).
+- **Fixed point:** `993d6f2` (T7 merged via PR #30)
+- **Candidate (implement-lifecycle reviews):** `e3e1270` — the two document edits;
+  `bb1f8ce` (the evidence log) rides as evidence-only. The plan commits `169314e` →
+  `17d0744` (ponytail recs 1–3) → `e795681` (log-filename correction) precede the
+  slice and are part of the branch.
+- Ancestry verified (`git merge-base --is-ancestor` rc 0); range non-empty; working
+  tree clean at review time (untracked `.env` excepted, never committed).
 
 ## Changed-path accounting
 
-`git diff --name-status 12a3dce..0af3ae3` — 5 files, all accounted for:
+`git diff --name-only 993d6f2..bb1f8ce` — 4 files, all accounted for:
 
 | Status | Path |
 |---|---|
-| M | `src/loop.test.ts` (two edits: retitle + the line-350 prose-regex deletion) |
-| A | `docs/work/WI-16/evidence/t7-unit-green.log` |
-| A | `docs/work/WI-16/implementation-plan-t7.md` (incl. the ponytail rec 1 note) |
-| M | `docs/work/WI-16/implementation-notes.md` (ledger entry 17 + review-round paragraph + follow-up finding, appended) |
-| M | `docs/work/WI-16/verification.md` (T7 section appended; two minors corrected in place at `0af3ae3`) |
+| M | `CLAUDE.md` (the three honesty clauses appended to the scenarios paragraph) |
+| M | `docs/agents/workflow.md` (row 24: `[--image <name>]` + the parenthetical; row 26 untouched) |
+| A | `docs/work/WI-16/evidence/t8-docs-diff.log` (the two diffs verbatim + the changed-path listing, capture point disclosed) |
+| M | `docs/work/WI-16/implementation-plan-t8.md` (the plan and its ponytail notes — pre-slice commits) |
 
-**No production source is in the range** — `src/loop.ts` untouched; the ticket is
-test-only and `src/loop.test.ts` is the ticket's explicit target. No `CLAUDE.md` change:
-no surface added or removed (the plan's recorded decision, confirmed correct by the
-specification review).
+**No source, test, script, or config file is in the range** — the ticket is docs-only
+and both documents are its explicit targets.
 
 ## Implement-lifecycle verdicts
 
-### Specification fidelity — PASS (final round at `0af3ae3`)
+### Specification fidelity — PASS (at `e3e1270`)
 
-All four ticket criteria verified against the artifacts, first round at `4a2d97f` and
-re-confirmed at `0af3ae3`: criterion 1 — the code diff is exactly two hunks, the removed
-line is exactly the plan-named regex at old-file line 350, zero `toMatch` remains in the
-describe; criterion 2 — the nine retained `toContain` pins are all covered by the
-classification table (seven rows, two of which classify two pins each; its one home in
-`verification.md`, per ponytail rec 1 — the
-ticket's literal "implementation notes" wording is superseded by the approved plan, a
-documented relocation both rounds flagged as adjacent, not a defect); criterion 3 — the
-`.loop-harness/` half verified mechanically enforced (the nesting guard at
-`src/loop.ts:924`, tested from `src/loop.test.ts:3213`) and the full diff-scope half
-recorded as a finding in the follow-ups and the verification's evidence boundary — the
-ticket's explicit either/or, honest arm taken; criterion 4 — both reviewers re-ran the
-suite themselves: 10 files / 287 tests rc=0, typecheck rc=0, grep for the removed regex
-rc=1. The plan's stop conditions were not hit (count never below 287; every retained
-token honestly classifiable).
+All four ticket criteria verified against the diff and the code, independently of the
+plan's claims: criterion 1 — the integration command is named under its own name in
+the authoritative table (the Scenarios row, exactly the command T3 delivered,
+`package.json:10`); plan D1's disposition of the ticket's letter (the command's home
+is that row, not a duplicate in row 24) judged faithful to FR-013's substance, the
+drift recorded openly in the plan as the protocol requires. Criterion 2 — `--image`
+documented, every flag claim true (`src/loop.ts:2605`, three spawn sites,
+`fixture.ts:27`, `package.json:13`). Criterion 3 — no automatic-run claim anywhere;
+CLAUDE.md affirmatively states the no-CI/no-hook posture (all four lookups re-run by
+the reviewer) and A-2 narrowed, not closed. Criterion 4 — every claim re-verified
+against the code by the reviewer, not trusted from the implementer. The unexercised
+-path sentence held up under adversarial reading: the GREEN canary is exercised
+(asserted in scenario 1), the RED net is not — "canary-red net" is the accurate
+phrasing; the planner, merger, and multi-lane concurrency genuinely unexercised.
+Adjacents: the two letter-drifts above (dispositioned via plan D1/D3), and the
+undercount below.
 
-### Code quality — APPROVED (final round at `0af3ae3`)
+### Code quality — APPROVED (at `e3e1270`)
 
-The first round's three minors and their dispositions:
-
-1. Test 2's retitled "with staged attachments" describes setup, not a causally
-   necessary condition — the `.loop-harness/` token comes from prompt step 4
-   (`src/loop.ts:550`), which `buildFixPrompt` emits unconditionally outside the
-   attachments-conditional section. **Accepted as-is**, rationale recorded in ledger
-   entry 17: the fixture stays as the only exercise of `buildFixPrompt`'s
-   `PromptAttachments` branch, and the structure is pre-existing.
-2. The classification table's `.loop-harness/` row ended on a fragment — **corrected
-   in place** at `0af3ae3`.
-3. The nesting-guard anchor read `3219+` where the test's `it(` line is 3213 —
-   **corrected in place**, proof `sed -n '3213p' src/loop.test.ts`, re-run and
-   confirmed by both rerun reviewers.
-
-The rerun round verified the corrections follow the standing-claims rule (prior claims
-quoted, re-runnable proof named), the ledger got a pure append (12 lines, zero
-deletions), the nine-token count matches the assertions in the file, and the suite is
-green at HEAD. No new findings.
+The evidence log was compared line-by-line against a fresh diff — verbatim-faithful.
+Commit messages conform; e3e1270's subject matches the plan's specified message
+verbatim. No lesson added (correctly — none emerged; ponytail rec 2 leaned on an
+existing lesson). Row 24's placement groups `--image` with `--model` and follows the
+row's clause-per-flag shape. Minors, all adjacent: (1–2) the shared undercount —
+"scenarios 1 and 3 execute the real CLI entry" and "the scenarios select
+`sandcastle-loop-test`" omit `command.test.ts` (and the integration gate's adapter
+seams) — no "only" anywhere, errs toward understating coverage, accepted as-is and
+recorded in verification.md; (3) `build:image:test` named in two table rows — an
+earned cross-reference answering a distinct reader question, not duplication;
+(4) "the verification stage" assumes the workflow's stage names — a wording nit the
+FR-011 parenthetical recovers from.
 
 ## Evidence and risk integrity
 
-- Unit + typecheck figures were re-executed independently by both first-round reviewers
-  and both rerun reviewers (287/287 rc=0, typecheck rc=0 at every round) — the strongest
-  form the evidence axis can ask for on a unit-surface change.
-- The pre-edit baseline (287/287 at `12a3dce`) is taken from the plan and the evidence
-  log, not re-run at the base by any reviewer; it is structurally certain (one assertion
-  line and one title string changed, no `it` block touched) and the post-edit count
-  matches. Disclosed as a formality by both reviewers, not a doubt.
-- The integration/scenarios suites are unaffected by construction: nothing in their
-  import graph changed (`src/loop.test.ts` and `docs/work/` only), so T6's whole-suite
-  captures remain applicable evidence for those surfaces.
+- The docs-only boundary is proven by the changed-path listing (verified
+  independently by the controller and both reviewers), per ponytail rec 2 — no gate
+  re-runs, since neither `npm test` nor `typecheck` reads either document and a check
+  that cannot fail is not evidence (the repo's own lesson). The baseline greens at
+  `993d6f2` are recorded in the plan.
+- The evidence log's header discloses that its changed-path listing was captured at
+  `e3e1270`, before the log's own commit (three files, not four) — self-referential
+  and honestly disclosed; the reviewer measured the full four-file set independently.
 
 ## Unverified evidence
 
-- The prior rounds' verdict texts at `4a2d97f` exist only in the controller's context
-  and this record (the rerun specification reviewer's observation); the rerun verdicts
-  at `0af3ae3` re-proved everything material first-hand, so nothing rests on the
-  unrecorded originals.
+- Nothing material. T8.2 records (this file, verification.md's T8 section, ledger
+  entry 19) follow the verdicts by design; they describe the same candidate.
 
-## Stage-4 four-axis gate — candidate `2782f17` (2026-09-29)
+---
 
-The post-verification `code-review` gate: four read-only reviewers, one per axis,
-dispatched concurrently with no access to each other's context, over
-`12a3dce..2782f17` (six files — the five above plus this review.md). Verdicts kept
-separate, never merged:
+# Stage-4 four-axis gate (post-verification `code-review`)
 
-1. **Repository standards — PASS** *(after one blocking finding, fixed and
-   re-confirmed by the axis in the working tree)*. The blocker: the plan said test 1
-   pins "seven" interface tokens beside its own enumeration of **eight** — the repo's
-   numeral-beside-its-list lesson recursed (a fourth recorded recurrence; the CLAUDE.md
-   lesson entry now carries it), corrected in place with the counting proof
-   (`git show 12a3dce:src/loop.test.ts | sed -n '329,336p'` → eight `toContain`
-   assertions). Two adjacents fixed alongside: verification's "captures at `9d1bdc2`"
-   overstating where T6's whole-suite capture ran (it ran at `5e67a49`; the fix
-   re-locates it), and this file's "one-to-one" for a nine-pin/seven-row mapping.
-   Everything else passed first-hand: commit trailers on all seven commits, no lint or
-   commands invented, the no-CLAUDE.md-change decision sound, ledger pure-append,
-   corrections carrying prior claim + proof, and the suite re-run green.
-2. **Specification fidelity — PASS.** All four ticket criteria re-verified
-   independently at the final state (including a whole-suite sweep finding every
-   remaining prompt assertion is an interface `toContain`, none a prose regex), gates
-   re-run green, scope clean. Two adjacents of its own, both out of FR-012's scope and
-   recorded here for a future TD6-style pass: `src/queue.test.ts:638` pins a full
-   sentence of the *planner* prompt (`toContain`, not a regex — FR-012 scopes to the
-   fix-agent prompt), and prompt pins outside the reviewed describe (review prompt,
-   merger branch, attachment paths) are interface tokens not listed in the
-   classification table, which the ticket never asked to cover.
-3. **Evidence and risk integrity — PASS.** The axis re-ran every proving command
-   itself: unit 10/287 rc=0, typecheck rc=0, the grep rc=1, both range diffs and
-   shortstats, every cited line anchor in `src/loop.ts` and `src/loop.test.ts`
-   (including the corrected 3213 and the pre-edit line 350), the classification
-   table's nine pins against seven rows, the commit chain and ancestry, the ledger's
-   pure-append claim, and the integration/scenarios non-claim's applicability
-   argument (nothing under `tests/` imports `src/loop.test.ts`; `src/loop.ts`
-   untouched). Three adjacents, all records-precision, fixed in place this commit:
-   verification row 1's loose "`src/loop.test.ts` only" parenthetical (the range
-   carries three files; the source-file claim is what holds), the evidence log's
-   "326–352" for a describe spanning 326–353, and this file's "HEAD" parenthetical
-   (superseded by the verification-pass commit).
-4. **Unnecessary complexity — PASS.** Nothing built beyond the specification: the
-   two-hunk test change is the minimal honest form, the staged-attachment fixture
-   legitimately retained as the only exercise of the attachments branch, ponytail
-   rec 1 confirmed applied and holding (no in-code classification comment; the table
-   lives exactly once), records proportionate within the repo's conventions. No
-   findings at any level.
+Range `993d6f2..7832310` (the implement-lifecycle reviews' candidate plus the records
+commits `e8e22c3`/`7832310`, which touch `docs/work/` only — the doc identity
+`e3e1270` is unchanged, `git diff e3e1270..7832310 -- CLAUDE.md docs/agents/workflow.md`
+empty). Four concurrent read-only axis reviewers, no access to each other's context.
 
-Commits landing after the implement verdicts (`2782f17` and this one) are records-only —
-the implement verdicts describe `0af3ae3` and the four-axis verdicts describe
-`2782f17`, with this commit carrying exactly the corrections the standards and
-evidence axes themselves prescribed.
+## Axis verdicts
+
+| Axis | Verdict | Blocking | Adjacents |
+|---|---|---|---|
+| Repository standards | **PASS** after correction (re-reviewed) | 1 found, fixed, re-confirmed | 2, fixed |
+| Specification fidelity | **PASS** | 0 | 2 |
+| Evidence and risk integrity | **PASS** | 0 | 2 |
+| Unnecessary complexity | **PASS** | 0 | — |
+
+### Repository standards — FAIL on B1, corrected, re-review PASS
+
+Blocking **B1**: the records credited `command.test.ts` with "two spawns (empty-queue,
+killed-run)" of the CLI entry — there is one; the killed-run spawn is
+`scenario-1.test.ts:290`'s. The error originated in the specification review's adjacent
+observation and was propagated into verification.md and ledger entry 19 (the
+numeral-beside-its-list lesson's sixth recorded recurrence). Fixed in place:
+verification.md corrected (undercount paragraph and the spawn anchors, which cited the
+argument lines `:54`/`:291` instead of the spawn calls `:51`/`:290`), each correction
+stating the prior claim with the proving grep
+(`grep -n '"npm"' tests/scenarios/*.test.ts` → exactly four entry spawns); ledger
+entry 19's correction appended, never rewritten; the plan's pass-site list (three of
+the four `--image` sites) gained the missing-fourth note. The axis re-reviewed the
+corrected working tree: B1's fix verified against its own fresh grep, correction
+conventions confirmed, numeral audit of every corrected section clean — **PASS**.
+Corrections land in the same commit as this section (records-only; the doc identity is
+untouched).
+
+### Specification fidelity — PASS
+
+All four criteria re-verified against the code, not the records: the command named
+under its own name matching T3's delivery character-for-character; every `--image`
+claim pinned (`src/loop.ts:2605`, `fixture.ts:27`, four pass sites, `package.json:13`);
+no automatic-run claim with all four no-CI/no-hook lookups re-run by the reviewer; the
+unexercised-path sentence accurate on all four counts (the fixture IS `autoMerge:
+true`, so "canary-red net" and "merger" is exactly the right split). Adjacent 1 — D1's
+letter deviation (specification.md:305-306 says the Pipeline-integration row names the
+command; the delivered home is T3's Scenarios row) — the plan's own stop condition
+reserves the call for this review, and the controller **ratifies D1**: duplicating the
+command into row 24 would create a second copy that drifts, the exact failure mode the
+authoritative-table rule exists to prevent; the drift stays recorded in the plan.
+Adjacent 2 — the A-2 statement lives in the testing-tiers paragraph, not the module
+table; the ticket names both surfaces jointly and no module was added or removed.
+Substance met.
+
+### Evidence and risk integrity — PASS
+
+Every proving inspection re-run by the reviewer: the changed-path listing (exactly
+seven files at `7832310`, matching the record), the empty doc-identity diff, all four
+no-CI/no-hook lookups, the evidence log's diff section compared content-identical
+against a fresh `git diff 993d6f2..e3e1270` (33 lines, identical index hashes and
+hunks), every claim→source anchor resolved (including `scenario-2.test.ts:54` as the
+onboard spawn, FR-011's non-claims text verbatim, A-2's heading at
+`harness-adversarial-review.md:118`), the correction note's four-spawn grep reproduced
+exactly, and the ponytail-rec-2 premise verified structurally (tsconfig includes no
+markdown; `vitest.config.ts` includes `src/**/*.test.ts` only; no record claims a T8
+gate re-run). Adjacents: anchor-line convention varies within one line across
+corrected passages (spawn-call lines in bodies, grep's argument lines in correction
+notes — each correct for its referent); the final-state note scopes to `e8e22c3` while
+the candidate is `7832310` (covered by the "records commits touch `docs/work/` only"
+framing, and the seven-file listing was re-verified at `7832310` itself). No action.
+
+### Unnecessary complexity — PASS
+
+Docs-only, two edits, one sentence per honesty clause (ponytail rec 3); nothing built
+the specification does not need.
+
+## Gate result
+
+**PASS on all four axes** at `7832310` plus the records-only corrections riding in
+this commit. T8 is gate-clean end to end; delivery awaits the owner's explicit
+authorization (`finishing-a-development-branch`).

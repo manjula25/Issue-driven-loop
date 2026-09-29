@@ -56,7 +56,14 @@ Scenario 3: a staleness run against the shared fixture — the test seeds a base
 recorded profile does not know (a pushed failing test) or a `testCmd` that exits zero
 while executing nothing, and asserts the queue aborts BEFORE the fix agent (no PR, no
 branch, an untouched origin/main tip), with the WI-14 escalation side effects asserted
-as positive evidence (the `harness-failed` label, the `preflight-failed` comment).
+as positive evidence (the `harness-failed` label, the `preflight-failed` comment). This
+scenario surface is not the default gate, and nothing runs it automatically — there is no CI
+and no hook, so the trigger is the verification stage's own requirement that a claim about the
+wiring carry fresh evidence for the exact candidate (FR-011's non-claims); adversarial finding
+A-2 ("the CLI entry is executed by no test") is thereby narrowed, not closed — scenarios 1 and
+3 execute the real CLI entry, so the entry's subprocess wiring is covered for the branches they
+drive, while the planner, the merger, the canary-red net, and the multi-lane wave runner remain
+unexercised.
 
 There is still **no lint step** — do not invent one. The authoritative command list lives in
 `docs/agents/workflow.md` (Repository commands); read it rather than guessing, and when a

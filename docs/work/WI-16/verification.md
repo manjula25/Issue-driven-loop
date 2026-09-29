@@ -701,3 +701,74 @@ the nesting guard's prompt-side counterpart", now completed.)*
   banners) are outside this ticket: FR-012 scopes to assertions **on the prompt sent to
   the fix agent**, and those assert harness-generated failure/summary strings. Flagged
   by the implementer; adjacent, not blocking.
+
+---
+
+# T8 — FR-013: docs honesty for the integration command and `--image` (2026-09-29)
+
+Doc identity `e3e1270` (worktree `wi-16-t8`, branch base `993d6f2`); the evidence log
+rode at `bb1f8ce`. Docs-only: exactly two documents changed — `docs/agents/workflow.md`
+and `CLAUDE.md` — plus the plan, the evidence log, and this record's siblings.
+
+## The claim, exactly
+
+The authoritative command table documents `--image` (accepted at `src/loop.ts:2605`,
+default `sandcastle-loop`) in the `npm run loop` flag list; the integration command is
+named under its own name in the table (the Scenarios row, from T3 — plan D1's recorded
+disposition of the ticket's letter); neither document claims the command runs
+automatically, and CLAUDE.md affirmatively states the trigger posture (no CI, no hook;
+the trigger is the verification stage's fresh-evidence requirement, FR-011's
+non-claims) and that A-2 is narrowed, not closed, with the covered/unexercised split
+stated. No run is evidence for a doc edit (the ticket's own boundary): the proof is
+the changed-path listing (the docs-only boundary) and the per-claim verification
+below, re-performed independently by both reviewers.
+
+## Claims → sources (criterion 4 — every claim in the two edits, and what backs it)
+
+| Claim (as written in the documents) | Source, re-verified |
+|---|---|
+| `--image <name>` selects the sandbox image, default `sandcastle-loop` | `src/loop.ts:2605` — `const imageName = optFlag("image") ?? "sandcastle-loop";` |
+| the scenarios select `sandcastle-loop-test` | `TEST_IMAGE = "sandcastle-loop-test"` (`tests/integration/fixture.ts:27`), passed at `scenario-1.test.ts:61` and `:300`, `scenario-3.test.ts:73`, `command.test.ts:223` |
+| `sandcastle-loop-test` is built by `npm run build:image:test` | `package.json` — `docker build -f .sandcastle/Dockerfile.test -t sandcastle-loop-test …` |
+| the scenario surface is not the default gate | `package.json:10` — its own script, its own config (`vitest.scenarios.config.ts`); `npm test` includes `src/**/*.test.ts` only |
+| nothing runs it automatically — no CI, no hook | `ls .github` → absent; `git ls-files .github` → 0; `git config --get core.hooksPath` → unset; the hooks dir (`git rev-parse --git-path hooks`) carries zero non-sample hooks — all four re-run 2026-09-29 |
+| the trigger is the verification stage's fresh-evidence requirement (FR-011's non-claims) | `specification.md` FR-011 non-claims (the spec says exactly this) |
+| A-2 ("the CLI entry is executed by no test") is narrowed, not closed; scenarios 1 and 3 execute the real CLI entry | A-2: `docs/work/reports/harness-adversarial-review.md:118`; spawns: `scenario-1.test.ts:51` and `:290`, `scenario-3.test.ts:63` (each `npm run loop` → `tsx src/loop.ts`, `package.json:15`); scenario 2 spawns `scripts/onboard.ts` (`scenario-2.test.ts:54`) and is NOT claimed *(anchors corrected 2026-09-29, stage-4 standards-axis adjacent 1: the row previously cited `scenario-1.test.ts:54` and `:291`, the argument lines, not the spawn calls)* |
+| the entry's subprocess wiring is covered for the branches they drive | the scenarios' asserted read-backs (merged PR, closed issue, abort ordering) — branches they actually drive |
+| the planner, the merger, the canary-red net, and the multi-lane wave runner remain unexercised | no scenario drives them: single eligible issue (scenario 1's own header — planner absent), empty queue (command.test.ts — no planner), abort before the fix agent (scenario 3); the GREEN canary runs (asserted `canary: green`, scenario-1) — the RED net (revert/halt/@-notify) never; no merge-tree/merger path anywhere in `tests/scenarios/` |
+
+## Evidence boundary and non-claims
+
+- The changed-path listing is the boundary proof (ponytail rec 2): `git diff
+  --name-only 993d6f2..e3e1270` lists exactly `CLAUDE.md`,
+  `docs/agents/workflow.md`, and the plan (pre-slice commits) — no source, test,
+  script, or config file. No gate re-runs: neither `npm test` nor `typecheck` reads
+  either document, so a re-run would be a check that cannot fail — not evidence (the
+  repo's own lesson). The baseline greens at `993d6f2` (typecheck rc=0, unit 10 files
+  / 287 tests rc=0, recorded in the plan) stand as the gates' state.
+- Documentation proves nothing about behavior; these records' claims are only as good
+  as the tickets they describe (the ticket's own boundary).
+- Known undercount, accepted as-is (both reviews' adjacent): "scenarios 1 and 3
+  execute the real CLI entry" omits `command.test.ts`'s one spawn — the empty-queue
+  invocation, `command.test.ts:211` — so the claim carries no "only" and errs toward
+  understating coverage; same family for "the scenarios select
+  `sandcastle-loop-test`" (the integration gate's adapter seams use it too). Recorded
+  here rather than re-edited: a behavior-preserving widening is optional polish, not
+  honesty repair. *(Corrected 2026-09-29, stage-4 standards-axis blocking finding B1:
+  this paragraph and ledger entry 19 previously said "two spawns (empty-queue,
+  killed-run)" — the killed-run spawn is `scenario-1.test.ts:290`'s, already covered
+  by "scenarios 1 and 3"; proof: `grep -n '"npm"' tests/scenarios/*.test.ts` yields
+  exactly four entry spawns — `scenario-1.test.ts:52`, `scenario-1.test.ts:291`,
+  `scenario-3.test.ts:64`, `command.test.ts:212` — one of them in command.test.ts.
+  The error originated in the specification review's adjacent observation and was
+  propagated into these records.)*
+
+**Verification-before-completion re-ran the proving inspections at the final state**
+(`e8e22c3`, 2026-09-29 — the records commits touch `docs/work/` only): the
+changed-path listing `993d6f2..HEAD` is exactly the seven files — the two documents,
+the plan, the evidence log, and the three records (`verification.md`,
+`implementation-notes.md`, `review.md`) — no source, test, script, or config file;
+`git diff e3e1270..HEAD -- CLAUDE.md docs/agents/workflow.md` is empty (the reviewed
+doc identity is unchanged); and the four no-CI/no-hook lookups were re-run and hold.
+No gate re-runs, per ponytail rec 2 and the section above.
+
