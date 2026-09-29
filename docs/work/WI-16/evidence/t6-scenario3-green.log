@@ -1,0 +1,36 @@
+Produced by: env -u CLAUDECODE -u AI_AGENT -u CLAUDE_CODE_CHILD_SESSION NO_COLOR=1 npx vitest run --config vitest.scenarios.config.ts tests/scenarios/scenario-3.test.ts (reporter-caveat env unset, T5 M2; supersedes the pre-review-fix capture — this is the code-quality-review-fix run: residue-proofed escalation read-backs, factored expectNoSpend, timeout above the spawn bound. One earlier fix attempt was red in setup at 13s: gh issue view --json labels returns {"labels": [...]}, not an array — fixed before this green. Durations are warm-cache figures: 40.4s + 37.9s vs the 435s/447s first greens, which were cold gh-bound resets)
+
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-16-t6
+
+To https://github.com/manjula25/loop-integration-fixture.git
+   9dd845b..a3d74b4  main -> main
+stdout | tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a stale baseline aborts before the fix run, naming re-onboarding
+loop exited 1
+Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
+FAILED gh-1: Aborted before the fix run — project profile is stale — baseline no longer matches a fresh run (recorded but not failing: none; failing but not recorded: tests/test_stale_baseline.py::test_baseline_contract). Re-run onboarding..; notify handle not configured
+
+stderr | tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a stale baseline aborts before the fix run, naming re-onboarding
+Queue aborted — gh-1: Aborted before the fix run — project profile is stale — baseline no longer matches a fresh run (recorded but not failing: none; failing but not recorded: tests/test_stale_baseline.py::test_baseline_contract). Re-run onboarding..
+
+To https://github.com/manjula25/loop-integration-fixture.git
+   7eae344..39739cb  main -> main
+stdout | tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a command that exits zero while executing no test is not read as a pass
+loop exited 1
+Run summary — attempted: 1 (fixed: 0, failed: 1) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
+FAILED gh-1: Aborted before the fix run — full-suite output is unreadable — no pytest summary line found (starts: "baseline-green").; notify handle not configured
+
+stderr | tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a command that exits zero while executing no test is not read as a pass
+Queue aborted — gh-1: Aborted before the fix run — full-suite output is unreadable — no pytest summary line found (starts: "baseline-green").
+
+ ✓ tests/scenarios/scenario-3.test.ts (2 tests) 78346ms
+   ✓ scenario 3 — a stale profile aborts before the fix run (WI-16 T6) (2)
+     ✓ a stale baseline aborts before the fix run, naming re-onboarding 40396ms
+     ✓ a command that exits zero while executing no test is not read as a pass 37949ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:44:49
+   Duration  78.53s (tests 100%)
+
+rc=0

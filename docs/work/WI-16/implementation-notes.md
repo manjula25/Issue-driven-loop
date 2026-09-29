@@ -423,6 +423,95 @@ sentence said "the same fixture" for everything), and the whole-suite green capt
 `evidence/t5-final-suite-green.log` — `Test Files 3 passed (3)`, `Tests 9 passed (9)`,
 2530.40s, rc=0, run at the final code identity.
 
+## 14. T6 — Scenario 3, a stale profile aborts before the fix run — 2026-09-29
+
+**T6.0 (plan, `903a71b`):** `implementation-plan-t6.md`, every load-bearing fact read
+from the source that will run (`src/loop.ts:958–1018`, `SUITE_SUMMARY_RE`,
+`parsePytestFailures`, the fixture's committed profile, the queue-mode rendering). The
+planning chain's own finding: **the ticket's three suggested seeds all land in the
+unreadable arm** — none can produce the `Re-run onboarding.` text criterion 1 literally
+requires, so D2 fixes the seed as a pushed failing test (the honest "code drifted after
+onboarding") and records the divergence from the ticket text openly. Ponytail rec 1
+applied before approval: origin/main tip equality + no-open-PR read-back replace
+`mergedPrs()` bookkeeping (a squash merge necessarily advances the tip). Worktree
+`wi-16-t6` off `96b28a8` (T5's merge); baselines typecheck rc=0, 287/287 rc=0; `.env`
+copied in (WI-14's lesson).
+
+**T6.1 (`5357a5b`):** test 1 (mismatch arm). One live observation corrected the plan in
+place: the plan captured `shaBefore` BEFORE the seed, so the seed's own commit falsified
+the tip-equality assertion — first run (414.5s) red on exactly that assertion; corrected
+to capture AFTER the seed (the correction and its record live in the plan). Every pinned
+string and read-back green on the second run (435.11s; controller re-run 435.05s;
+typecheck and 287/287 rc=0 alongside).
+
+**T6.2 (`1e60411`):** test 2 (zero-test arm, `echo baseline-green`). The pre-run comment
+baseline is load-bearing and new: test 1's run already posted a `preflight-failed`
+comment, so only a comment NEWER than the baseline proves THIS run escalated. Leaf first
+green 878.66s; controller re-run 880.96s (both runs the file-scoped 2/2); typecheck and
+287/287 rc=0 alongside. Cosmetic finding recorded, not fixed: the FAILED line renders
+`Re-run onboarding..` — loop.ts:1009 wraps a baselineProblem already ending in "." with
+a trailing ".".
+
+**T6.3:** this entry, the T6 section of `verification.md`, the CLAUDE.md scenarios
+sentence amended to name Scenario 3, and the whole-suite green
+`evidence/t6-final-suite-green.log` — `Test Files 4 passed (4)`, `Tests 11 passed (11)`,
+3448.46s, rc=0 (the suite's first launch was killed by a session restart before any
+output; the relaunched run is the captured one). Numeral correction, applied in place in
+the plan's T6.3: it said "exactly six files" while naming seven (test file, plan,
+verification.md, implementation-notes.md, CLAUDE.md, and the two evidence logs) — the
+CLAUDE.md lesson (a numeral beside its list) caught at records time and corrected in
+place in the plan rather than repeated. Typecheck rc=0 and 287/287 rc=0 re-run fresh at
+the records state.
+
+## 15. T6 reviews — spec PASS with two record corrections, code-quality NEEDS_FIXES, the residue fix — 2026-09-29
+
+**Specification review** (read-only leaf, `96b28a8..b145f0d`): PASS, no blocking
+findings, three adjacent observations. Two were the repo's own record-defect
+classes and were fixed by amending the records commit (`b145f0d` → `8504434`):
+observation 1 — the plan header said "3 files / 8 tests" while
+`t5-final-suite-green.log` records 9 (numeral-beside-its-list, a third instance
+the two earlier corrections had missed); observation 2 — verification claim 1's
+"green first try" read as claiming the test passed first try when the run itself
+was red on the plan's pre-seed `shaBefore` capture. Observation 3 (the superseded
+T6.1 single-test capture lives in git history by design) accepted as-is. The
+changed candidate invalidated the verdict; the delta re-review PASSED at
+`8504434`.
+
+**Code-quality review** (read-only leaf, `96b28a8..8504434`): NEEDS_FIXES on one
+important finding — **test 1's escalation read-backs were residue-vulnerable**:
+`resetFixture()` never deletes comments or labels, so on every rerun the
+"latest comment" and "labels include" assertions could match a PRIOR run's
+artifacts (the vacuous-check lesson; a failed comment post would have read
+green). Exactly the hazard test 2 documents and fixes for itself. Fixed at
+`5e67a49` along with five minors: the label is read and removed test-side before
+the run (WI-15's read-before-remove shape) and only comments newer than a
+pre-run baseline count; the comment no-@ check uses the stdout check's regex;
+the duplicated no-spend read-back block is factored into `expectNoSpend`
+(scenario-1 precedent); per-test bounds raised to 1200s, above the CLI spawn's
+1080s (spawnSync blocks the event loop — a lower vitest bound cannot bind, the
+inversion T3/T4 never had); `seedStaleness` surfaces its own diagnostic on an
+empty ls-remote. One fix attempt was red in setup at 13s — `gh issue view --json
+labels` returns `{"labels": [...]}`, not an array (disclosed in the evidence
+log's first line) — then green: focused 2/2 in 78.53s, whole suite 4/11 in
+432.85s rc=0, typecheck rc=0, unit 287/287 rc=0, all warm-cache figures (the
+cold pre-fix whole suite was 3448.46s — the 8x gap is cache warmth, not code).
+Both reviews re-ran on the final candidate; verdicts in `review.md`.
+
+## 16. T6 stage-4 gate — four-axis code-review PASS at 9d1bdc2 — 2026-09-29
+
+Verification-before-completion re-ran the proving commands at the final state
+(typecheck rc=0, unit 10 files / 287 tests rc=0; the whole-suite capture's
+applicability stated exactly — only `docs/work/` paths differ since `5e67a49`, so the
+capture is unaffected evidence). The `code-review` gate then ran four concurrent
+read-only axis reviewers over `96b28a8..9d1bdc2` (eight files — `review.md` joined at
+`dec6989`): **all four PASS**, no blocking findings. The evidence axis re-ran the
+proving commands itself and found three stale record anchors, fixed in place in the
+same commit as the gate's `review.md` section: verification claim 4's "seven files at
+HEAD" (eight at HEAD, the eighth being `review.md`), the 435s duration attribution
+(ledger 14's superseded first-green; the committed pre-fix log shows 431.3s for that
+slot), and review.md's "HEAD" wording. T6 is review-clean end to end; delivery
+awaits the owner's explicit authorization (`finishing-a-development-branch`).
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,

@@ -51,7 +51,12 @@ process against local per-run git setups seeded from the committed
 `tests/scenarios/fixtures/onboarding-documented/` (the undocumented variant is that seed
 with the README removed; the README deliberately carries one false command). No guard, no
 reset — nothing is shared, and a used repo dir cannot be re-onboarded anyway
-(`sandbox.close()` leaves `.sandcastle/worktrees/loop-onboard`).
+(`sandbox.close()` leaves `.sandcastle/worktrees/loop-onboard`). And from WI-16 T6,
+Scenario 3: a staleness run against the shared fixture — the test seeds a baseline the
+recorded profile does not know (a pushed failing test) or a `testCmd` that exits zero
+while executing nothing, and asserts the queue aborts BEFORE the fix agent (no PR, no
+branch, an untouched origin/main tip), with the WI-14 escalation side effects asserted
+as positive evidence (the `harness-failed` label, the `preflight-failed` comment).
 
 There is still **no lint step** — do not invent one. The authoritative command list lives in
 `docs/agents/workflow.md` (Repository commands); read it rather than guessing, and when a
