@@ -563,6 +563,34 @@ wording). All corrections are the axes' own prescriptions; the code identity `d3
 is untouched throughout. T7 is gate-clean end to end; delivery awaits the owner's
 explicit authorization (`finishing-a-development-branch`).
 
+## 19. T8 — FR-013, docs honesty for the integration command and `--image` — 2026-09-29
+
+Docs-only ticket on branch `wi-16-t8` (base `993d6f2`, PR #30's merge). Ponytail recs
+1–3 applied to the plan before implementation (`17d0744`): the trigger-posture
+statement lives once (CLAUDE.md, not also workflow.md's Scenarios row); the gate
+re-runs are deleted as checks that cannot fail on a docs-only diff (the changed-path
+listing is the boundary proof); the A-2 clause pinned to one sentence. One plan
+correction followed (`e795681`: the evidence log's filename still named the deleted
+gate outputs). The leaf implementer made exactly two edits — workflow.md row 24's
+flag list gains `[--image <name>]` with the default/test-image parenthetical, and
+CLAUDE.md's scenarios paragraph gains the three honesty clauses — after verifying
+every claim against the code first (loop.ts:2605, the three spawn sites, TEST_IMAGE,
+the no-CI/no-hook lookups, A-2 at the adversarial review). Commits `e3e1270` (docs)
+and `bb1f8ce` (evidence log); the controller re-inspected the diffs and had verified
+the same facts itself before dispatch.
+
+Review round (same day): specification review **PASS** — all four criteria met, D1's
+letter-drift disposition (the command's home is T3's Scenarios row, not a duplicate
+in row 24) judged faithful to the requirement's substance — and code-quality review
+**APPROVED** at the same candidate, zero blocking findings across both. Shared
+adjacent (both reviews): "scenarios 1 and 3 execute the real CLI entry" undercounts —
+`command.test.ts` also spawns the entry (empty-queue, killed-run); no "only", errs
+toward understating coverage, recorded in verification.md as accepted-as-is rather
+than re-edited. Code-quality minor 3 (build:image:test named in two rows) judged an
+earned cross-reference; minor 4 (the "verification stage" phrase assumes the
+workflow's stage names) a wording nit. No lesson emerged. Checkpoint accepted at
+`e3e1270`/`bb1f8ce`; records follow.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
