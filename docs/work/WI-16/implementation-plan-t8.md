@@ -64,7 +64,8 @@ delivered table gives it a dedicated row (T3) in the same authoritative list —
 is D2-of-prd.md's intent ("a dedicated command belonging to the pipeline-integration
 surface") made more precise, not less. Duplicating the command into row 24 would
 create a second copy that drifts. The plan therefore cites the Scenarios row as the
-command's home and lands the honesty additions there; the drift is recorded here, in
+command's home — and the honesty additions live in CLAUDE.md alone (D3, ponytail rec
+1), not duplicated into the table; the drift is recorded here, in
 the ticket's terms, for the spec review to judge.
 
 ### D2 — `--image` joins the `npm run loop` flag list, phrased from the code
@@ -80,8 +81,12 @@ Three clauses appended to the scenarios paragraph (no restructuring, no module-t
 change — no module is added or removed): it is not the default gate; nothing runs it
 automatically (no CI, no hook — the trigger is the verification stage's own
 fresh-evidence requirement for the exact candidate, FR-011's non-claims); and A-2 is
-narrowed, not closed, with the covered/uncovered split stated as the facts above give
-it.
+narrowed, not closed — pinned to one sentence so the leaf writes one sentence, not a
+paragraph: scenarios 1 and 3 execute the real CLI entry, so the entry's subprocess
+wiring is covered for the branches they drive, while the planner, the merger, the
+canary-red net, and the multi-lane wave runner remain unexercised. *(Ponytail rec 3
+applied 2026-09-29: D3 previously said the split was "stated as the facts above give
+it," which invited copying the facts section's full enumeration into CLAUDE.md.)*
 
 ---
 
@@ -93,18 +98,25 @@ it.
 
 - workflow.md:24 — add `[--image <name>]` to the `npm run loop` flag list with the
   D2 parenthetical.
-- workflow.md:26 (Scenarios row) — append the trigger-posture clause: nothing runs it
-  automatically (no CI, no hook); the trigger is the verification stage's
-  fresh-evidence requirement for the exact candidate.
 - CLAUDE.md scenarios paragraph — append the three D3 clauses.
+
+*(Ponytail recs 1 and 2 applied 2026-09-29. Rec 1 — the workflow.md:26
+trigger-posture clause is deleted from this plan: FR-013 assigns the positive
+statement to CLAUDE.md's module table and testing-tiers description, and workflow.md's
+own requirement is only that the row not imply the command runs by itself, which
+absence of claim satisfies — the statement lives once, in CLAUDE.md. Rec 2 — the
+typecheck/unit re-runs are deleted: neither gate reads `CLAUDE.md` or `docs/`
+(tsconfig includes `src/` + `tests/`; vitest includes `src/**/*.test.ts`), so the
+re-run is a check that cannot fail, and this repo's own lesson says such a check is
+not evidence; the changed-path diff below is the boundary proof, and the baseline
+greens at `993d6f2` stand as the gates' state.)*
 
 **Expected observation:** `git diff --name-only 993d6f2..HEAD` lists exactly
 `CLAUDE.md`, `docs/agents/workflow.md`, and `docs/work/WI-16/` records — no source,
-test, script, or config file. `npm run typecheck` rc=0 and `npm test` 10 files /
-287 tests rc=0 re-run unchanged (proving the edit touched nothing the gates read).
+test, script, or config file. That listing is the docs-only boundary's proof.
 
-**Capture:** the two doc diffs plus the re-run gate outputs (rc on the line after
-each command) → `evidence/t8-docs-diff-and-gates.log`.
+**Capture:** the two doc diffs plus the changed-path listing →
+`evidence/t8-docs-diff-and-gates.log`.
 
 **Commit:** `docs(WI-16 T8): FR-013 — name --image and the scenarios' trigger posture honestly`
 
@@ -112,7 +124,8 @@ each command) → `evidence/t8-docs-diff-and-gates.log`.
 
 - **`verification.md`** — append the T8 section: the claim→source table (criterion 4:
   every claim in the two documents, and the code line, command, or lookup that backs
-  it), the gates re-run, and the evidence boundary (docs-only; no run is evidence for
+  it), the changed-path listing as the boundary proof (ponytail rec 2 — no gate
+  re-runs), and the evidence boundary (docs-only; no run is evidence for
   a doc edit).
 - **`implementation-notes.md`** — append ledger entry 19.
 - No new lesson is planned; if one emerges it lands as one line under `## Lessons`.
