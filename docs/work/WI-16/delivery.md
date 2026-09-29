@@ -111,19 +111,23 @@ records; review-fix records; review record; verification pass; stage-4 gate reco
 
 ## Requested external actions
 
-None yet — this record is written before authorization. The intended actions, on the
-owner's explicit approval: push of `wi-16-t7` to origin and a pull request to `main`.
-No merge will be requested or performed — the harness's own repository always keeps
-human merge (hard constraint 1).
+Push of `wi-16-t7` to origin and a pull request to `main` — explicitly authorized by
+the owner 2026-09-29 ("yes", in answer to the stated question; the delivery record's
+`c5e68fc` commit captures the authorization state it was written under). No merge
+requested or to be performed — the harness's own repository always keeps human merge
+(hard constraint 1).
 
 ## Executed external actions and observed results
 
-None.
+- **Push** — `git push -u origin wi-16-t7` → `* [new branch] wi-16-t7 -> origin/wi-16-t7`,
+  upstream set, rc=0 (2026-09-29).
+- **Pull request** — `gh pr create --base main --head wi-16-t7` →
+  **https://github.com/manjula25/software-factory-loop/pull/30** (2026-09-29).
+- This delivery-update commit and its push ride the same PR.
 
 ## Pending actions
 
-- Owner authorization for the push and PR (asked in this session; not yet given).
-- Human merge of the PR once opened (by policy, not by this session).
+- Human merge of PR #30 (by policy, not by this session).
 - T8 (docs honesty) — the last WI-16 ticket after T7.
 - Worktree cleanup (incl. `wi-16-t4`, `wi-16-t5`, `wi-16-t6` from prior merges;
   `wi-16-t7` after merge) — deliberately not automatic.
