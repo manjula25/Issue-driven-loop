@@ -17,6 +17,11 @@
  * comment) are WI-14's designed behavior on this arm and are ASSERTED as
  * positive evidence (plan D4); the profile carries no notify handle, so the
  * comment must carry no `@` line anywhere (FR-009).
+ *
+ * Both escalation read-backs are residue-proofed (code-quality review,
+ * important 1): the reset never deletes comments or labels, so the label is
+ * removed test-side before each asserted run and only comments NEWER than a
+ * pre-run baseline count — presence is THIS run's act, not a prior run's.
  */
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -109,10 +114,14 @@ function seedStaleness(files: Record<string, string>, subject: string): void {
   gitIn(["push", "origin", "main"]);
   const head = gitIn(["rev-parse", "HEAD"]).trim();
   const remoteMain = gitIn(["ls-remote", "origin", "refs/heads/main"])
-    .split("\t")[0]!
-    .trim();
-  if (head !== remoteMain) {
-    throw new Error(`staleness seed not on origin/main: HEAD ${head} vs remote ${remoteMain}`);
+    .split("\t")[0]
+    ?.trim();
+  if (remoteMain === undefined || remoteMain === "" || head !== remoteMain) {
+    // The undefined/empty guards (code-quality review minor 4): an empty
+    // ls-remote must surface THIS diagnostic, not a split-era TypeError.
+    throw new Error(
+      `staleness seed not on origin/main: HEAD ${head} vs remote ${remoteMain ?? "(ls-remote returned nothing)"}`,
+    );
   }
 }
 
@@ -139,6 +148,36 @@ function printReportLines(run: SpawnSyncReturns<string>): void {
       console.error(line);
     }
   }
+}
+
+/**
+ * The shared no-spend read-backs (criterion 2's shape), factored per
+ * scenario-1's `expectScenarioOutcome` precedent (code-quality review
+ * minor 1): nothing open, nothing branched, the seed still the tip — and
+ * tip equality doubles as the no-merged-PR proof, since a squash-merged PR
+ * would necessarily have advanced it (ponytail rec 1). The fetch comes
+ * first: origin/main as the REMOTE holds it, not as a stale ref remembers it.
+ */
+function expectNoSpend(shaBefore: string): void {
+  gitIn(["fetch", "--quiet", "--prune", "origin"]);
+  const open = JSON.parse(
+    execFileSync(
+      "gh",
+      ["pr", "list", "--repo", FIXTURE_REPO, "--state", "open", "--json", "number"],
+      { encoding: "utf8" },
+    ),
+  ) as Array<{ number: number }>;
+  expect(open).toHaveLength(0);
+  const heads = gitIn(["ls-remote", "--heads", "origin"])
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => line.replace(/.*refs\/heads\//, "").trim());
+  expect(heads).toEqual(["main"]);
+  // No fix branch was ever created, and the preflight branch was deleted
+  // after the gate — neither survives in the local clone.
+  expect(gitIn(["branch", "--list", "fix/gh-1"]).trim()).toBe("");
+  expect(gitIn(["branch", "--list", "loop/preflight-gh-1"]).trim()).toBe("");
+  expect(gitIn(["rev-parse", "origin/main"]).trim()).toBe(shaBefore);
 }
 
 /**
@@ -182,11 +221,15 @@ const SILENT_TESTCMD_PROFILE = `{
 
 describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", () => {
   it("a stale baseline aborts before the fix run, naming re-onboarding", () => {
-    // Timeout note: measured 435s on the first green (reset ~210s dominated
-    // by gh POSTs, run ~200s dominated by the preflight sandbox's pip install
-    // and the two escalation gh writes, read-backs ~5s). The 900s bound is
-    // ~2x the measurement, per the bound-not-budget rule (T3/T4 precedent) —
-    // the CLI spawn itself carries 1080s.
+    // Timeout note: measured 435s standalone on the first green, 431s in the
+    // T6.3 whole-suite lap (reset ~210s dominated by gh POSTs, run ~200s
+    // dominated by the preflight sandbox's pip install and the two escalation
+    // gh writes, read-backs ~5s). The 1200s bound is ~2.7x the measurement
+    // per the bound-not-budget rule, and sits ABOVE the CLI spawn's own
+    // 1080s: spawnSync blocks the event loop, so a vitest bound below the
+    // spawn bound can never bind — a hung child burns 1080s and the test
+    // fails on an elapsed timeout instead of an assertion (code-quality
+    // review minor 2; T3/T4 posture restored).
     assertScenariosPreconditions();
     openGuard();
     ensureFixtureClone();
@@ -203,6 +246,38 @@ describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", 
     // proves the run added nothing (a pre-seed capture would fail on the
     // seed's own commit, observed live on the first run).
     const shaBefore = gitIn(["rev-parse", "origin/main"]).trim();
+    // Residue-proofing (code-quality review important 1): the reset never
+    // deletes comments or labels, and earlier scenario-3 runs leave both
+    // behind — so "latest contains" / "labels include" alone could pass on a
+    // PRIOR run's artifacts. The comment side takes a pre-run count baseline
+    // (test 2's own idiom); the label side reads the issue's labels first and
+    // removes it only if actually worn (WI-15's read-before-remove shape, and
+    // a missing label needs no removal) — the same test-side standing as the
+    // seed, so the label's presence after the run is THIS run's act.
+    const commentsBefore = JSON.parse(
+      execFileSync(
+        "gh",
+        ["issue", "view", "1", "--repo", FIXTURE_REPO, "--json", "comments"],
+        { encoding: "utf8" },
+      ),
+    ) as Array<{ body: string }>;
+    const commentCountBefore = commentsBefore.length;
+    const labelsBefore = (
+      JSON.parse(
+        execFileSync(
+          "gh",
+          ["issue", "view", "1", "--repo", FIXTURE_REPO, "--json", "labels"],
+          { encoding: "utf8" },
+        ),
+      ) as { labels: Array<{ name: string }> }
+    ).labels;
+    if (labelsBefore.some((label) => label.name === "harness-failed")) {
+      execFileSync(
+        "gh",
+        ["issue", "edit", "1", "--repo", FIXTURE_REPO, "--remove-label", "harness-failed"],
+        { encoding: "utf8" },
+      );
+    }
 
     const run = runLoopCli();
     // Unconditional (plan D1): the evidence log carries the red run beside
@@ -240,30 +315,9 @@ describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", 
       .join("\n");
     expect(harnessOutput).not.toMatch(/@[A-Za-z0-9_.-]+/);
 
-    // Criterion 2 — the no-spend read-back through git and gh. The fetch
-    // first: origin/main as the REMOTE holds it, not as a stale ref remembers it.
-    gitIn(["fetch", "--quiet", "--prune", "origin"]);
-    const open = JSON.parse(
-      execFileSync(
-        "gh",
-        ["pr", "list", "--repo", FIXTURE_REPO, "--state", "open", "--json", "number"],
-        { encoding: "utf8" },
-      ),
-    ) as Array<{ number: number }>;
-    expect(open).toHaveLength(0);
-    const heads = gitIn(["ls-remote", "--heads", "origin"])
-      .split("\n")
-      .filter((line) => line !== "")
-      .map((line) => line.replace(/.*refs\/heads\//, "").trim());
-    expect(heads).toEqual(["main"]);
-    // No fix branch was ever created, and the preflight branch was deleted
-    // after the gate — neither survives in the local clone.
-    expect(gitIn(["branch", "--list", "fix/gh-1"]).trim()).toBe("");
-    expect(gitIn(["branch", "--list", "loop/preflight-gh-1"]).trim()).toBe("");
-    // Tip equality: the run added nothing to main — the staleness seed is
-    // still the tip, and a merged (squash) PR would necessarily have
-    // advanced it, so this is also the no-merged-PR proof (ponytail rec 1).
-    expect(gitIn(["rev-parse", "origin/main"]).trim()).toBe(shaBefore);
+    // Criterion 2 — the no-spend read-backs (shared helper) plus the issue
+    // read this test's escalation assertions need.
+    expectNoSpend(shaBefore);
     // The issue the run aborted on is still open.
     const issue = JSON.parse(
       execFileSync(
@@ -274,23 +328,26 @@ describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", 
     ) as { state: string; labels: Array<{ name: string }>; comments: Array<{ body: string }> };
     expect(issue.state).toBe("OPEN");
 
-    // Plan D4 — the escalation arm's designed side effects, asserted as
-    // positive evidence the run took the preflight-failed arm: issue #1 now
-    // wears the label, and its latest comment carries the outcome class and
-    // the byte-identical stale reason — with no @ line (no handle configured).
+    // Plan D4 — the escalation arm's designed side effects, each proven as
+    // THIS run's act (residue-proofed above): issue #1 now wears the label
+    // the test removed pre-run, and a comment NEWER than the baseline carries
+    // the outcome class and the byte-identical stale reason — with no
+    // @-mention anywhere (the stdout check's regex, not a weaker ^@ anchor —
+    // code-quality review minor 3; no handle is configured).
     expect(issue.labels.map((label) => label.name)).toContain("harness-failed");
-    const latest = issue.comments[issue.comments.length - 1]?.body ?? "";
-    expect(latest).toContain("Outcome: preflight-failed");
-    expect(latest).toContain("project profile is stale");
-    expect(latest).not.toMatch(/^@/m);
-  }, 900_000);
+    const newComments = issue.comments.slice(commentCountBefore);
+    expect(newComments.length).toBeGreaterThan(0);
+    const escalation = newComments.map((comment) => comment.body).join("\n");
+    expect(escalation).toContain("Outcome: preflight-failed");
+    expect(escalation).toContain("project profile is stale");
+    expect(escalation).not.toMatch(/@[A-Za-z0-9_.-]+/);
+  }, 1_200_000);
 
   it("a command that exits zero while executing no test is not read as a pass", () => {
     // Timeout note: measured 447s on the first green, the same shape as test
-    // 1's 435s (reset ~210s gh-bound, run dominated by the preflight
-    // sandbox's pip install and the escalation gh write, read-backs ~5s). The
-    // 900s bound is ~2x the measurement, per the bound-not-budget rule
-    // (T3/T4 precedent) — the CLI spawn itself carries 1080s.
+    // 1's 435s (see its note for the breakdown and the why-above-1080s
+    // reasoning — code-quality review minor 2). The 1200s bound is ~2.7x the
+    // measurement.
     assertScenariosPreconditions();
     openGuard();
     ensureFixtureClone();
@@ -341,29 +398,8 @@ describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", 
     );
     expect(stderr).toContain("Queue aborted");
 
-    // The same no-spend read-backs as test 1 (criterion 2's shape). The fetch
-    // first: origin/main as the REMOTE holds it, not as a stale ref remembers it.
-    gitIn(["fetch", "--quiet", "--prune", "origin"]);
-    const open = JSON.parse(
-      execFileSync(
-        "gh",
-        ["pr", "list", "--repo", FIXTURE_REPO, "--state", "open", "--json", "number"],
-        { encoding: "utf8" },
-      ),
-    ) as Array<{ number: number }>;
-    expect(open).toHaveLength(0);
-    const heads = gitIn(["ls-remote", "--heads", "origin"])
-      .split("\n")
-      .filter((line) => line !== "")
-      .map((line) => line.replace(/.*refs\/heads\//, "").trim());
-    expect(heads).toEqual(["main"]);
-    // No fix branch was ever created, and the preflight branch was deleted
-    // after the gate — neither survives in the local clone.
-    expect(gitIn(["branch", "--list", "fix/gh-1"]).trim()).toBe("");
-    expect(gitIn(["branch", "--list", "loop/preflight-gh-1"]).trim()).toBe("");
-    // Tip equality: the run added nothing to main — the profile seed is still
-    // the tip, and a merged (squash) PR would necessarily have advanced it.
-    expect(gitIn(["rev-parse", "origin/main"]).trim()).toBe(shaBefore);
+    // The same no-spend read-backs as test 1 (the shared helper).
+    expectNoSpend(shaBefore);
     // The issue the run aborted on is still open.
     const issue = JSON.parse(
       execFileSync(
@@ -382,5 +418,5 @@ describe("scenario 3 — a stale profile aborts before the fix run (WI-16 T6)", 
     expect(newComments.map((comment) => comment.body).join("\n")).toContain(
       "Outcome: preflight-failed",
     );
-  }, 900_000);
+  }, 1_200_000);
 });
