@@ -21,7 +21,8 @@ rc=0
 rc=1
 (no matches — the prose regex is gone)
 
-## Post-edit describe block (src/loop.test.ts:326–352)
+## Post-edit describe block (src/loop.test.ts:326–353; the closing `});` is line 353 —
+## range corrected 2026-09-29, stage-4 evidence-axis adjacent 2, from a prior "326–352")
 Both tests carry only `toContain` assertions over interface tokens:
 ello-world, pip install -e ".[test]", pytest -q, reproTestPath(issue),
 LOOP_IDENTITY.name, LOOP_IDENTITY.email, <red-evidence>, <green-evidence>,

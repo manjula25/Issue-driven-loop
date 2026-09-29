@@ -16,11 +16,15 @@ file, and the boundary it cares about is *production* source.
 ## Repository facts this plan is built on (code-verified 2026-09-29)
 
 - The prompt assertions live in two tests, `src/loop.test.ts:326–353`:
-  - Test 1 (327–337) pins seven interface tokens: `ello-world` (symptom from the
+  - Test 1 (327–337) pins eight interface tokens: `ello-world` (symptom from the
     issue), `pip install -e ".[test]"` and `pytest -q` (profile-pinned commands),
     `reproTestPath(issue)` (harness-constructed path), `LOOP_IDENTITY.name`/`.email`
     (harness-set commit identity), `<red-evidence>`/`<green-evidence>` (wrapper tags
-    the harness parses back). **All seven are interface — kept, verbatim.**
+    the harness parses back). **All eight are interface — kept, verbatim.**
+    *(Corrected 2026-09-29, stage-4 standards-axis blocking finding: the plan
+    previously said "seven" beside this list of eight — the repo's own
+    numeral-beside-its-list lesson, recursed; proof: `git show 12a3dce:src/loop.test.ts
+    | sed -n '329,336p'` prints exactly eight `toContain` assertions.)*
   - Test 2 (339–352) stages an attachment and carries two assertions: the prose regex
     `/commit only the fix and the reproduction test/i` at **line 350** (FR-012's
     named illegitimate assertion — **removed**), and `` toContain("`.loop-harness/`") ``

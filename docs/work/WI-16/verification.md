@@ -642,13 +642,16 @@ the edit; the controller re-ran the post-edit suite itself.
 `npm run typecheck` → rc=0. The integration (`npm run test:integration`) and scenarios
 (`npm run test:scenarios`) suites are a stated non-claim for this ticket: nothing in
 their import graph changed in the range (`src/loop.test.ts` and `docs/work/` only), so
-T6's whole-suite captures at `9d1bdc2` remain applicable evidence for those surfaces.
+T6's whole-suite captures (made at code identity `5e67a49`, applicable through the
+docs-only commits to `9d1bdc2`) remain applicable evidence for those surfaces.
+*(Precision fix 2026-09-29, stage-4 standards-axis adjacent 1: previously "captures at
+`9d1bdc2`," which overstated where the capture ran.)*
 
 ## Claims → evidence
 
 | # | Claim | Proved by | Output |
 |---|---|---|---|
-| 1 | Criterion 1 — no assertion on the prompt matches prose with an ordinary-language regex, and every remaining assertion is classified | the diff (`12a3dce..d389b94`, `src/loop.test.ts` only) + the classification table below | exactly two hunks: the retitle and the line-350 deletion; zero `toMatch` remains in the describe (grep rc=1); every retained assertion is a `toContain` pin classified in the table |
+| 1 | Criterion 1 — no assertion on the prompt matches prose with an ordinary-language regex, and every remaining assertion is classified | the source diff (`12a3dce..d389b94` — `src/loop.test.ts`, the only source file that range's three files touch) + the classification table below | exactly two hunks: the retitle and the line-350 deletion; zero `toMatch` remains in the describe (grep rc=1); every retained assertion is a `toContain` pin classified in the table |
 | 2 | Criterion 2 — every retained assertion names a harness-produced or harness-parsed token, classification stated in the records | the classification table below — living **here and only here** (ponytail rec 1, 2026-09-29: an in-code comment block would be a second copy that drifts) | all nine retained tokens classified; none requires a phrasing defense |
 | 3 | Criterion 3 — the removed assertion's behavior is enforced where it lives, or the gap is recorded | code facts + the finding below | the `.loop-harness/` half IS mechanically enforced — the nesting guard (`pathCommittedOnBranch`, `src/loop.ts:924`, `git ls-tree`) tested at `src/loop.test.ts:3213+`; the full diff-scope half ("only the fix and the reproduction test") is **instructed** (prompt step 4, `src/loop.ts:550`) and pre-merge-reviewed, but never mechanically enforced — recorded as a finding and added to the work item's follow-ups, not silently dropped |
 | 4 | Criterion 4 — `npm test` and `npm run typecheck` green | `evidence/t7-unit-green.log` | 10 files / 287 tests rc=0 (identical to the pre-edit count); typecheck rc=0 |

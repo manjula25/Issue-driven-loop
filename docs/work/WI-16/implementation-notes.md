@@ -544,6 +544,25 @@ setup rather than a causally necessary condition — the token comes from prompt
 unconditionally) is recorded here as accepted-as-is; the fixture stays as the only
 exercise of `buildFixPrompt`'s attachments branch.
 
+## 18. T7 stage-4 gate — four-axis code-review PASS at 2782f17 — 2026-09-29
+
+The post-verification gate ran four concurrent read-only axis reviewers over
+`12a3dce..2782f17`. The standards axis returned FAIL on one blocker — the plan said
+"seven interface tokens" beside its own list of **eight** (the numeral-beside-its-list
+lesson, now a fourth recorded recurrence, added to the CLAUDE.md lesson entry) — fixed
+in place with the counting proof, plus its two adjacents (where T6's whole-suite
+capture actually ran; review.md's "one-to-one"), and the axis re-reviewed the working
+tree and returned **PASS**. Specification fidelity and unnecessary complexity returned
+**PASS** with no blocking findings (spec's two adjacents — the planner-prompt sentence
+pin at `src/queue.test.ts:638` and prompt pins outside the reviewed describe — recorded
+in review.md as future TD6-style candidates, out of FR-012's scope). Evidence and risk
+integrity returned **PASS** after re-running every proving command itself, with three
+records-precision adjacents fixed in the same commit as the gate section (verification
+row 1's loose parenthetical, the evidence log's 326–352 range, review.md's "HEAD"
+wording). All corrections are the axes' own prescriptions; the code identity `d389b94`
+is untouched throughout. T7 is gate-clean end to end; delivery awaits the owner's
+explicit authorization (`finishing-a-development-branch`).
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
