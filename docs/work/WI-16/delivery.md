@@ -74,6 +74,6 @@ gate section), and this file.
 
 | Action | Authority | Result |
 |---|---|---|
-| Push `wi-16-t8` to origin | Owner's "yes", 2026-09-29 | executed — see below |
-| Open PR to `main` | Owner's "yes", 2026-09-29 | executed — see below |
+| Push `wi-16-t8` to origin | Owner's "yes", 2026-09-29 | executed — `wi-16-t8` → `origin/wi-16-t8`, new branch, 2026-09-29 |
+| Open PR to `main` | Owner's "yes", 2026-09-29 | executed — **PR #31** (`https://github.com/manjula25/software-factory-loop/pull/31`), base `main` |
 | Merge | none — human merge only | pending (the owner) |
