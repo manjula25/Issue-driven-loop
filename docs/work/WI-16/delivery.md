@@ -101,18 +101,23 @@ same PR.
 
 ## Requested external actions
 
-Pending the owner's explicit authorization: push of `wi-16-t6` to origin and a pull
-request to `main`. No merge requested or to be performed — the harness's own
-repository always keeps human merge (hard constraint 1).
+Push of `wi-16-t6` to origin and a pull request to `main` — explicitly authorized by
+the owner 2026-09-29 ("yes", in answer to the stated question; the delivery record's
+`df2811f` commit captures the authorization state it was written under). No merge
+requested or to be performed — the harness's own repository always keeps human merge
+(hard constraint 1).
 
 ## Executed external actions and observed results
 
-None yet.
+- **Push** — `git push -u origin wi-16-t6` → `* [new branch] wi-16-t6 -> origin/wi-16-t6`,
+  upstream set, rc=0 (2026-09-29).
+- **Pull request** — `gh pr create --base main --head wi-16-t6` →
+  **https://github.com/manjula25/software-factory-loop/pull/29** (2026-09-29).
+- This delivery-update commit and its push ride the same PR.
 
 ## Pending actions
 
-- Owner authorization for push + PR (this section updates on execution).
-- Human merge of the PR (by policy, not by this session).
+- Human merge of PR #29 (by policy, not by this session).
 - T7 (TD6 prompt assertions) and T8 (docs honesty) — the remaining WI-16 tickets.
 - Worktree cleanup (incl. `wi-16-t4`, `wi-16-t5` from prior merges) — deliberately
   not automatic.
