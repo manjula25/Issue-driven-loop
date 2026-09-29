@@ -563,7 +563,7 @@ the 8x duration gap is cache warmth, not a claim about either run.)
 | 1 | Criterion 1 — the abort names re-onboarding: the FAILED line carries `project profile is stale — baseline no longer matches a fresh run`, the failing-but-not-recorded test id, and `Re-run onboarding`; the summary line reports `attempted: 1 (fixed: 0, failed: 1)` | `evidence/t6-scenario3-green.log` (test 1) | 2 passed file-scoped, rc=0; every asserted string pinned from `src/loop.ts`/`formatSummary` before the run, and every one of them matched on the run's first execution — the run itself was red on the plan's pre-seed `shaBefore` capture (ledger entry 14), a test defect corrected before the green *(rephrased 2026-09-29, spec review observation 2: "green first try" alone read as claiming the test passed first try)* |
 | 2 | Criterion 2 — no fix spend: no open PR, `git ls-remote --heads` lists only `main`, no `fix/gh-1` or `loop/preflight-gh-1` branch, origin/main tip equal to the seed's sha (a squash-merged PR would necessarily have advanced it — ponytail rec 1), issue #1 OPEN | `evidence/t6-scenario3-green.log` (test 1, read-backs) | all green; stderr carries `Queue aborted — gh-1: Aborted before the fix run` |
 | 3 | Criterion 3 — a command that exits zero while executing no test is not read as a pass: `FAILED gh-1: Aborted before the fix run — full-suite output is unreadable — no pytest summary line found (starts: "baseline-green")` | `evidence/t6-scenario3-green.log` (test 2) | green over a RED run (child exit 1); the same no-spend read-backs; a comment NEWER than the pre-run baseline carries `Outcome: preflight-failed` (the comment-count baseline is load-bearing — test 1's run already posted one) |
-| 4 | Criterion 4 — accounting | changed-path accounting, `96b28a8..HEAD` | exactly the seven files named in the plan's T6.3 (see the numeral correction recorded in the plan and ledger entry 14); none under `src/` |
+| 4 | Criterion 4 — accounting | changed-path accounting, `96b28a8..a4cdaa1` and `96b28a8..HEAD` | seven files through `a4cdaa1` — the plan's set (see the numeral correction in the plan and ledger 14); eight at final HEAD, the eighth being `review.md` itself, a review-time records file; none under `src/` in every range *(re-anchored 2026-09-29, stage-4 evidence-axis finding 1: the row previously said "96b28a8..HEAD — exactly the seven files," true only through `a4cdaa1`)* |
 | 5 | The escalation side effects are the designed WI-14 arm, asserted as positive evidence (plan D4) — and **residue-proof** (code-quality review important 1): the label is read and removed test-side before the run, and only comments NEWER than a pre-run baseline count, so each assertion is THIS run's act, never a prior run's leftover (the reset never deletes comments or labels) | `evidence/t6-scenario3-green.log` (both tests) | `harness-failed` label present after test-side removal; a new-baseline comment carries `Outcome: preflight-failed` + the byte-identical reason; no `@[A-Za-z0-9_.-]+` match in the comment or the banner-filtered run output |
 | 6 | The default gates are unchanged | this record; re-run at each task commit and again at the review-fix state (ledger 15) | 287/287 rc=0; typecheck rc=0 at every checkpoint |
 
@@ -588,8 +588,12 @@ the 8x duration gap is cache warmth, not a claim about either run.)
   counts toward the limit); it fails against the seeded latent defect by construction.
   The scenario does not cover a stale `installCmd`, a third arm shape, or any behavior
   of the fix agent (never reached).
-- Durations are environment-bound: test 1 measured 435s and test 2 measured 447s
-  on the first greens (cold, gh-bound resets); the post-fix focused re-run
+- Durations are environment-bound: test 1's first green measured 435.11s (ledger
+  14; that capture was superseded — the committed pre-fix log records a later
+  cold run of the same test at 431.3s) and test 2's 447s appears in that
+  committed log byte-for-byte *(attribution corrected 2026-09-29, stage-4
+  evidence-axis finding 2: the row previously credited both figures to "the
+  first greens" as if both sat in committed logs)*; the post-fix focused re-run
   measured 40.4s and 37.9s and the post-fix whole suite 432.85s on warm caches —
   the spread is the environment, not the code. The 1200s per-test bounds sit
   ABOVE the CLI spawn's 1080s (spawnSync blocks the event loop, so a lower

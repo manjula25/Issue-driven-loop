@@ -14,9 +14,13 @@ candidate. Ledger entry 15 records the chain.
 ## Candidate identities
 
 - **Fixed point:** `96b28a8a7e85b7b6fd6a9d305ec4049b6b0eb6f9` (T5 merged via PR #28)
-- **Candidate:** `a4cdaa11066f78ea0ff8fd1cce17808fbcc058c3` (branch `wi-16-t6`, HEAD) —
+- **Candidate (implement-lifecycle reviews):** `a4cdaa11066f78ea0ff8fd1cce17808fbcc058c3`
+  (branch `wi-16-t6` at the time — superseded as HEAD by the records commits below, which
+  touch `docs/work/` only) —
   code identity `5e67a49d98721d809854d5bb929f51416ce9ed91` (the review-fix commit); the
   commit after it is records only, amended twice to fold in reviewer observations.
+- **Candidate (stage-4 four-axis gate):** `9d1bdc23e412499bfee857d7111be04cab734054` —
+  see the gate section at the end.
 - Branch history: `903a71b` (plan) → `5357a5b` (T6.1, test 1) → `1e60411` (T6.2, test 2)
   → `8504434` (records, amended from `b145f0d`) → `5e67a49` (code-quality fixes) →
   `a4cdaa1` (review-fix records, amended from `debc91f`).
@@ -37,6 +41,10 @@ candidate. Ledger entry 15 records the chain.
 | A | `docs/work/WI-16/implementation-plan-t6.md` |
 | M | `docs/work/WI-16/verification.md` (T6 section appended, then amended in place) |
 | A | `tests/scenarios/scenario-3.test.ts` |
+
+Through `a4cdaa1` that is the whole set. The full range to the stage-4 candidate,
+`96b28a8..9d1bdc2`, carries an **eighth** file — this `review.md` itself (committed at
+`dec6989`), a review-time records file.
 
 **No file under `src/` is in the range** — verified by both reviewers independently
 (`git diff --stat 96b28a8..a4cdaa1 -- src/` empty). The ticket's FR-003/FR-008 boundary
@@ -116,3 +124,52 @@ and the spread is disclosed in verification.md.
   criterion.
 - Scenario durations (cold and warm alike) are environment-bound, not performance
   claims.
+
+## Stage-4 four-axis gate — candidate `9d1bdc2` (2026-09-29)
+
+The post-verification `code-review` gate: four read-only reviewers, one per axis,
+dispatched concurrently with no access to each other's context, over
+`96b28a8..9d1bdc2` (eight files — the seven above plus this review.md). Verdicts kept
+separate, never merged:
+
+1. **Repository standards — PASS.** CLAUDE.md honesty rule verified at file level
+   (every claim in the amended scenarios sentence checked against the code);
+   ledger-appended / corrected-in-place conventions hold; numerals beside lists
+   verified against their enumerations (the plan's remaining "3 files / 8 tests"
+   occurrences are the no-T5 conditional branch and are arithmetically consistent);
+   test idiom, timeout posture, secrets discipline, loop identity, and the
+   Co-Authored-By trailer on all commits all conform.
+2. **Specification fidelity — PASS.** All four ticket criteria re-verified
+   independently against the file and logs, agreeing with the implement-lifecycle
+   review's PASS; D1–D5 confirmed real and honestly recorded (D2's arm analysis
+   re-proven from `SUITE_SUMMARY_RE` and the routing at `src/loop.ts:981–982`).
+3. **Evidence and risk integrity — PASS.** The axis re-ran the proving commands
+   itself: typecheck rc=0, unit 10 files / 287 tests rc=0, both range diffs, the
+   7-file/944/1 shortstat, and ancestry checks — every printed command produces
+   what the record says. The whole-suite capture's applicability argument verified
+   (docs-only diff since `5e67a49`; timestamps internally consistent; rc placement
+   correct). Three adjacent findings, all stale anchors/attribution in records —
+   fixed in place this commit: verification claim 4's "seven files at HEAD" anchor,
+   the 435s attribution (the figure is ledger 14's superseded first-green; the
+   committed pre-fix log records 431.3s for that slot), and this file's own "HEAD"
+   wording (above).
+4. **Unnecessary complexity — PASS.** Nothing built beyond the criteria and the
+   approved plan; the residue-proofing is the minimal honest form (comments have
+   order — a count baseline suffices; labels have no order — read-then-remove is
+   the only honest shape, applied once); `expectNoSpend` is exactly criterion 2's
+   list; the two tests are proportional. Adjacent taste observations (one gh
+   round-trip saveable in test 1's baselines; a belt-and-braces stdout filter in
+   `printReportLines`; ledger/review narrative overlap within the repo's own
+   convention) recorded, none acted on.
+
+Adjacent observations accepted without change across the axes: test 2's reliance on
+test 1 for the no-@ output assertions (its FAILED line's `notify handle not
+configured` proves the absent-handle arm regardless); CLAUDE.md's sentence
+attributing both escalation assertions to the file rather than each test (disclosed
+in the test comment and verification.md); the reflog-unreachable pre-amend identity
+`b145f0d` (below). No blocking findings on any axis.
+
+Commits landing after the implement verdicts (`dec6989`, `9d1bdc2`, and this one)
+are records-only — the implement verdicts describe `a4cdaa1` and the four-axis
+verdicts describe `9d1bdc2`; this commit's own corrections are the ones the
+evidence axis itself prescribed.

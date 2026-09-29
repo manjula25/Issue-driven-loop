@@ -497,6 +497,21 @@ log's first line) — then green: focused 2/2 in 78.53s, whole suite 4/11 in
 cold pre-fix whole suite was 3448.46s — the 8x gap is cache warmth, not code).
 Both reviews re-ran on the final candidate; verdicts in `review.md`.
 
+## 16. T6 stage-4 gate — four-axis code-review PASS at 9d1bdc2 — 2026-09-29
+
+Verification-before-completion re-ran the proving commands at the final state
+(typecheck rc=0, unit 10 files / 287 tests rc=0; the whole-suite capture's
+applicability stated exactly — only `docs/work/` paths differ since `5e67a49`, so the
+capture is unaffected evidence). The `code-review` gate then ran four concurrent
+read-only axis reviewers over `96b28a8..9d1bdc2` (eight files — `review.md` joined at
+`dec6989`): **all four PASS**, no blocking findings. The evidence axis re-ran the
+proving commands itself and found three stale record anchors, fixed in place in the
+same commit as the gate's `review.md` section: verification claim 4's "seven files at
+HEAD" (eight at HEAD, the eighth being `review.md`), the 435s duration attribution
+(ledger 14's superseded first-green; the committed pre-fix log shows 431.3s for that
+slot), and review.md's "HEAD" wording. T6 is review-clean end to end; delivery
+awaits the owner's explicit authorization (`finishing-a-development-branch`).
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
