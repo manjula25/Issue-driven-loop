@@ -116,7 +116,8 @@ greens at `993d6f2` stand as the gates' state.)*
 test, script, or config file. That listing is the docs-only boundary's proof.
 
 **Capture:** the two doc diffs plus the changed-path listing →
-`evidence/t8-docs-diff-and-gates.log`.
+`evidence/t8-docs-diff.log`. *(Filename corrected 2026-09-29 after ponytail rec 2:
+the prior name, `t8-docs-diff-and-gates.log`, named the gate outputs rec 2 deleted.)*
 
 **Commit:** `docs(WI-16 T8): FR-013 — name --image and the scenarios' trigger posture honestly`
 
