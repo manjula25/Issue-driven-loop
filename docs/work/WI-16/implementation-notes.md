@@ -591,6 +591,16 @@ earned cross-reference; minor 4 (the "verification stage" phrase assumes the
 workflow's stage names) a wording nit. No lesson emerged. Checkpoint accepted at
 `e3e1270`/`bb1f8ce`; records follow.
 
+*Correction to this entry (appended 2026-09-29, stage-4 standards-axis blocking
+finding B1): the review-round paragraph above says `command.test.ts` "also spawns the
+entry (empty-queue, killed-run)" — two spawns. There is one: the empty-queue
+invocation (`command.test.ts:211`). The killed-run spawn is
+`scenario-1.test.ts:290`'s, already covered by "scenarios 1 and 3". Proof:
+`grep -n '"npm"' tests/scenarios/*.test.ts` → exactly four entry spawns
+(scenario-1:52, scenario-1:291, scenario-3:64, command.test.ts:212). The error
+originated in the specification review's adjacent observation and was propagated here
+and into verification.md, which is corrected in place.*
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,

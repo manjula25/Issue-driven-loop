@@ -25,7 +25,10 @@ identified.
   `tests/scenarios/scenario-1.test.ts:61`, `scenario-3.test.ts:73`, and
   `command.test.ts:223`; `TEST_IMAGE = "sandcastle-loop-test"`
   (`tests/integration/fixture.ts:27`), built by `npm run build:image:test`
-  (already named in workflow.md's Integration tests row).
+  (already named in workflow.md's Integration tests row). *(Note added 2026-09-29,
+  stage-4 standards-axis adjacent 2: this list names three of the four pass sites —
+  `scenario-1.test.ts:300`, the killed-run spawn's, is the fourth; the verification
+  record's claim→source table carries the full set.)*
 - **The dedicated integration command exists and is already named under its own
   name.** `npm run test:scenarios` (`package.json` — `vitest run --config
   vitest.scenarios.config.ts`), carried in `docs/agents/workflow.md:26` under its own

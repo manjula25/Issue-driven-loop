@@ -733,7 +733,7 @@ below, re-performed independently by both reviewers.
 | the scenario surface is not the default gate | `package.json:10` — its own script, its own config (`vitest.scenarios.config.ts`); `npm test` includes `src/**/*.test.ts` only |
 | nothing runs it automatically — no CI, no hook | `ls .github` → absent; `git ls-files .github` → 0; `git config --get core.hooksPath` → unset; the hooks dir (`git rev-parse --git-path hooks`) carries zero non-sample hooks — all four re-run 2026-09-29 |
 | the trigger is the verification stage's fresh-evidence requirement (FR-011's non-claims) | `specification.md` FR-011 non-claims (the spec says exactly this) |
-| A-2 ("the CLI entry is executed by no test") is narrowed, not closed; scenarios 1 and 3 execute the real CLI entry | A-2: `docs/work/reports/harness-adversarial-review.md:118`; spawns: `scenario-1.test.ts:54` and `:291`, `scenario-3.test.ts:63` (each `npm run loop` → `tsx src/loop.ts`, `package.json:15`); scenario 2 spawns `scripts/onboard.ts` (`scenario-2.test.ts:54`) and is NOT claimed |
+| A-2 ("the CLI entry is executed by no test") is narrowed, not closed; scenarios 1 and 3 execute the real CLI entry | A-2: `docs/work/reports/harness-adversarial-review.md:118`; spawns: `scenario-1.test.ts:51` and `:290`, `scenario-3.test.ts:63` (each `npm run loop` → `tsx src/loop.ts`, `package.json:15`); scenario 2 spawns `scripts/onboard.ts` (`scenario-2.test.ts:54`) and is NOT claimed *(anchors corrected 2026-09-29, stage-4 standards-axis adjacent 1: the row previously cited `scenario-1.test.ts:54` and `:291`, the argument lines, not the spawn calls)* |
 | the entry's subprocess wiring is covered for the branches they drive | the scenarios' asserted read-backs (merged PR, closed issue, abort ordering) — branches they actually drive |
 | the planner, the merger, the canary-red net, and the multi-lane wave runner remain unexercised | no scenario drives them: single eligible issue (scenario 1's own header — planner absent), empty queue (command.test.ts — no planner), abort before the fix agent (scenario 3); the GREEN canary runs (asserted `canary: green`, scenario-1) — the RED net (revert/halt/@-notify) never; no merge-tree/merger path anywhere in `tests/scenarios/` |
 
@@ -749,11 +749,19 @@ below, re-performed independently by both reviewers.
 - Documentation proves nothing about behavior; these records' claims are only as good
   as the tickets they describe (the ticket's own boundary).
 - Known undercount, accepted as-is (both reviews' adjacent): "scenarios 1 and 3
-  execute the real CLI entry" omits `command.test.ts`'s two spawns (empty-queue,
-  killed-run) — the claim carries no "only" and errs toward understating coverage;
-  same family for "the scenarios select `sandcastle-loop-test`" (the integration
-  gate's adapter seams use it too). Recorded here rather than re-edited: a
-  behavior-preserving widening is optional polish, not honesty repair.
+  execute the real CLI entry" omits `command.test.ts`'s one spawn — the empty-queue
+  invocation, `command.test.ts:211` — so the claim carries no "only" and errs toward
+  understating coverage; same family for "the scenarios select
+  `sandcastle-loop-test`" (the integration gate's adapter seams use it too). Recorded
+  here rather than re-edited: a behavior-preserving widening is optional polish, not
+  honesty repair. *(Corrected 2026-09-29, stage-4 standards-axis blocking finding B1:
+  this paragraph and ledger entry 19 previously said "two spawns (empty-queue,
+  killed-run)" — the killed-run spawn is `scenario-1.test.ts:290`'s, already covered
+  by "scenarios 1 and 3"; proof: `grep -n '"npm"' tests/scenarios/*.test.ts` yields
+  exactly four entry spawns — `scenario-1.test.ts:52`, `scenario-1.test.ts:291`,
+  `scenario-3.test.ts:64`, `command.test.ts:212` — one of them in command.test.ts.
+  The error originated in the specification review's adjacent observation and was
+  propagated into these records.)*
 
 **Verification-before-completion re-ran the proving inspections at the final state**
 (`e8e22c3`, 2026-09-29 — the records commits touch `docs/work/` only): the
