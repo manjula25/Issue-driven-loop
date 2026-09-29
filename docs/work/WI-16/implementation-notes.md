@@ -423,6 +423,46 @@ sentence said "the same fixture" for everything), and the whole-suite green capt
 `evidence/t5-final-suite-green.log` — `Test Files 3 passed (3)`, `Tests 9 passed (9)`,
 2530.40s, rc=0, run at the final code identity.
 
+## 14. T6 — Scenario 3, a stale profile aborts before the fix run — 2026-09-29
+
+**T6.0 (plan, `903a71b`):** `implementation-plan-t6.md`, every load-bearing fact read
+from the source that will run (`src/loop.ts:958–1018`, `SUITE_SUMMARY_RE`,
+`parsePytestFailures`, the fixture's committed profile, the queue-mode rendering). The
+planning chain's own finding: **the ticket's three suggested seeds all land in the
+unreadable arm** — none can produce the `Re-run onboarding.` text criterion 1 literally
+requires, so D2 fixes the seed as a pushed failing test (the honest "code drifted after
+onboarding") and records the divergence from the ticket text openly. Ponytail rec 1
+applied before approval: origin/main tip equality + no-open-PR read-back replace
+`mergedPrs()` bookkeeping (a squash merge necessarily advances the tip). Worktree
+`wi-16-t6` off `96b28a8` (T5's merge); baselines typecheck rc=0, 287/287 rc=0; `.env`
+copied in (WI-14's lesson).
+
+**T6.1 (`5357a5b`):** test 1 (mismatch arm). One live observation corrected the plan in
+place: the plan captured `shaBefore` BEFORE the seed, so the seed's own commit falsified
+the tip-equality assertion — first run (414.5s) red on exactly that assertion; corrected
+to capture AFTER the seed (the correction and its record live in the plan). Every pinned
+string and read-back green on the second run (435.11s; controller re-run 435.05s;
+typecheck and 287/287 rc=0 alongside).
+
+**T6.2 (`1e60411`):** test 2 (zero-test arm, `echo baseline-green`). The pre-run comment
+baseline is load-bearing and new: test 1's run already posted a `preflight-failed`
+comment, so only a comment NEWER than the baseline proves THIS run escalated. Leaf first
+green 878.66s; controller re-run 880.96s (both runs the file-scoped 2/2); typecheck and
+287/287 rc=0 alongside. Cosmetic finding recorded, not fixed: the FAILED line renders
+`Re-run onboarding..` — loop.ts:1009 wraps a baselineProblem already ending in "." with
+a trailing ".".
+
+**T6.3:** this entry, the T6 section of `verification.md`, the CLAUDE.md scenarios
+sentence amended to name Scenario 3, and the whole-suite green
+`evidence/t6-final-suite-green.log` — `Test Files 4 passed (4)`, `Tests 11 passed (11)`,
+3448.46s, rc=0 (the suite's first launch was killed by a session restart before any
+output; the relaunched run is the captured one). Numeral correction, applied in place in
+the plan's T6.3: it said "exactly six files" while naming seven (test file, plan,
+verification.md, implementation-notes.md, CLAUDE.md, and the two evidence logs) — the
+CLAUDE.md lesson (a numeral beside its list) caught at records time and corrected in
+place in the plan rather than repeated. Typecheck rc=0 and 287/287 rc=0 re-run fresh at
+the records state.
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,

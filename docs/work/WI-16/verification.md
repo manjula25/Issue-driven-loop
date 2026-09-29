@@ -497,3 +497,101 @@ Scenario 2's 3.)
 | Do the no-flags defaults really apply on the undocumented setup? | **Closed** — test B green; profile records exactly the `optValue` defaults. |
 | Can a used fixture be reused across runs? | **Closed, no** — verified live; per-run repos are a requirement, not hygiene. |
 
+# T6 — Scenario 3: a stale profile aborts before the fix run (2026-09-29)
+
+Candidate: branch `wi-16-t6`, code identity `1e60411` (records follow it; the
+whole-suite command below is what a reader re-runs to re-verify this ticket, the
+per-claim log names its file-scoped command).
+
+## The claim, exactly
+
+T6 drives the real CLI's queue path against the shared fixture with a profile that no
+longer matches the code, in both stale directions, and asserts the run aborts BEFORE
+the fix agent: no PR, no branch, an untouched origin/main tip, issue #1 still open.
+Test 1 seeds the code having drifted after onboarding (a teammate's pushed test
+asserting the documented truncate contract, failing against the seeded latent defect —
+a fresh-baseline failure the profile's `baselineFailures: []` does not record) and
+asserts the mismatch arm: the FAILED line names the profile's staleness and
+`Re-run onboarding`. Test 2 seeds the other direction — `testCmd` becomes
+`echo baseline-green`, exit 0 executing no test — and asserts the unreadable arm:
+silence is rejected, never read as "no new failures". Both runs escalate on the
+`preflight-failed` arm (WI-14): issue #1 wears `harness-failed` and carries a comment
+with the outcome class and byte-identical reason, with no `@` line anywhere (the
+profile has no notifyHandle; FR-009). No file under `src/` changed.
+
+## Proving commands, run fresh at the records state (code identity `1e60411`)
+
+```
+$ npm run typecheck
+exit=0
+```
+
+```
+$ npm test
+exit=0
+      Tests  287 passed (287)
+```
+
+```
+$ npm run test:scenarios
+exit=0
+ Test Files  4 passed (4)
+      Tests  11 passed (11)
+   Duration  3448.46s (tests 100%)
+```
+(`evidence/t6-final-suite-green.log`, started 09:49:54. The 11 = the 9 from T5's
+whole-suite green plus T6's 2; the suite serialized per `fileParallelism: false`,
+and the whole-suite green is mandatory before any green is claimed — the CLAUDE.md
+lesson from T4 on.)
+
+## Claims → evidence
+
+| # | Claim | Proved by | Output |
+|---|---|---|---|
+| 1 | Criterion 1 — the abort names re-onboarding: the FAILED line carries `project profile is stale — baseline no longer matches a fresh run`, the failing-but-not-recorded test id, and `Re-run onboarding`; the summary line reports `attempted: 1 (fixed: 0, failed: 1)` | `evidence/t6-scenario3-green.log` (test 1) | 2 passed file-scoped, rc=0; every asserted string pinned from `src/loop.ts`/`formatSummary` before the run, and every one of them matched on the run's first execution — the run itself was red on the plan's pre-seed `shaBefore` capture (ledger entry 14), a test defect corrected before the green *(rephrased 2026-09-29, spec review observation 2: "green first try" alone read as claiming the test passed first try)* |
+| 2 | Criterion 2 — no fix spend: no open PR, `git ls-remote --heads` lists only `main`, no `fix/gh-1` or `loop/preflight-gh-1` branch, origin/main tip equal to the seed's sha (a squash-merged PR would necessarily have advanced it — ponytail rec 1), issue #1 OPEN | `evidence/t6-scenario3-green.log` (test 1, read-backs) | all green; stderr carries `Queue aborted — gh-1: Aborted before the fix run` |
+| 3 | Criterion 3 — a command that exits zero while executing no test is not read as a pass: `FAILED gh-1: Aborted before the fix run — full-suite output is unreadable — no pytest summary line found (starts: "baseline-green")` | `evidence/t6-scenario3-green.log` (test 2) | green over a RED run (child exit 1); the same no-spend read-backs; a comment NEWER than the pre-run baseline carries `Outcome: preflight-failed` (the comment-count baseline is load-bearing — test 1's run already posted one) |
+| 4 | Criterion 4 — accounting | changed-path accounting, `96b28a8..HEAD` | exactly the seven files named in the plan's T6.3 (see the numeral correction recorded in the plan and ledger entry 14); none under `src/` |
+| 5 | The escalation side effects are the designed WI-14 arm, asserted as positive evidence (plan D4) | `evidence/t6-scenario3-green.log` (both tests) | `harness-failed` label present; latest/new comment carries `Outcome: preflight-failed` + the byte-identical reason; no `/^@/m` line; banner-filtered no-@-mention check on the run's output |
+| 6 | The default gates are unchanged | this record, run at the T6.3 commits | 287/287 rc=0; typecheck rc=0 (re-run at each task commit) |
+
+## Evidence boundary and non-claims
+
+- **The ticket's three suggested seeds all land in the unreadable arm** (a renamed
+  directory, a removed file, and a no-test command each produce output with no
+  non-zero summary count). Criterion 1's "naming re-onboarding" is reachable only from
+  the mismatch arm, so the delivered seed is a pushed failing test — the honest form
+  of "the code drifted after onboarding." Recorded openly as plan D2; the ticket text
+  and the delivered seed are not silently assumed identical.
+- **FR-009's boundary note is superseded in this one respect:** the spec says the
+  escalation path is "deliberately not exercised by the automated test" — written
+  before WI-14 wired the preflight-failed arm to escalate. This scenario's failure arm
+  fires that path as designed, on the fixture, with no notify handle. A recorded
+  observation here, not a spec edit.
+- **"No spend" is proven by the abort ordering, not by billing:** the FAILED reason IS
+  the baseline problem (preflight), no fix branch exists, and the provider env are
+  placeholders the preflight path never dials — the agent is scripted anyway, so there
+  is no bill to inspect.
+- The seed's failing test asserts the documented truncate contract (the ellipsis
+  counts toward the limit); it fails against the seeded latent defect by construction.
+  The scenario does not cover a stale `installCmd`, a third arm shape, or any behavior
+  of the fix agent (never reached).
+- Durations are environment-bound: test 1 measured 435s, test 2 measured 447s
+  (first greens; reset ~210s gh-bound, run dominated by the preflight sandbox's
+  `pip install`); the 900s per-test bounds carry those figures in comments.
+
+## Remaining risks
+
+- The cosmetic double-period on the FAILED line (`Re-run onboarding..`): loop.ts:1009
+  wraps a baselineProblem already ending in "." with a trailing "." — pinned
+  substrings match regardless; recorded, not fixed (no `src/` licence).
+- The label lifecycle is asserted only on the add side here; its removal on a later
+  verified delivery is covered by the unit surface, not by a scenario.
+
+## Unknowns closed or deferred
+
+| Unknown | Status |
+|---|---|
+| Does the preflight branch (`loop/preflight-gh-1`) leak into the clone on abort? | **Closed, no** — `git branch --list` empty for both patterns, asserted in both tests. |
+| Does a leftover `harness-failed` label interfere with a later scenario's eligibility? | **Closed, no** — labels are not an eligibility filter; test 2 ran green wearing test 1's label. |
+

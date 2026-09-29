@@ -6,7 +6,11 @@ the failure arm and **FR-011**'s command unchanged. Slice D.
 Base: the merge commit of T5's PR if it is delivered first (recommended — the branch `wi-16-t5`
 candidate is review-clean and waiting); otherwise `99d209c` (T4 merged via PR #27). The tasks
 touch no file T5 added; only the T6.3 whole-suite figures differ (4 files / 11 tests vs
-3 files / 8 tests).
+3 files / 9 tests).
+*(Corrected in place 2026-09-29, T6 specification review observation 1: this said
+"3 files / 8 tests" — a numeral disagreeing with `evidence/t5-final-suite-green.log`,
+which records 3 files / 9 tests; the repo's own numeral-beside-its-list lesson, a third
+instance the two earlier corrections missed.)*
 
 **No file under `src/` is changed.** The ticket is explicit: the behavior already exists
 (`src/loop.ts:958–1018`); this adds the scenario. If the scenario shows the implemented behavior
@@ -229,6 +233,9 @@ T6.1's capture; both stay in git history).
   `tests/scenarios/scenario-3.test.ts`, this plan, and the four records/evidence files named
   above (`verification.md`, `implementation-notes.md`, `CLAUDE.md`,
   `evidence/t6-{scenario3-green,final-suite-green}.log`). None under `src/`.
+  *(Corrected in place 2026-09-29, T6.3: this paragraph said "exactly six files" while
+  naming seven — the numeral disagreed with its own enumeration, the CLAUDE.md lesson
+  caught at records time; the count and the list now agree.)*
 
 **Commit:** `docs(WI-16 T6): records — verification claims, ledger entry 14, whole-suite green`
 
