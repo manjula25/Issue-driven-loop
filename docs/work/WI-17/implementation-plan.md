@@ -127,7 +127,8 @@ only `fix-failed`-class red verdicts do.
 ### D4 — the PRD amendment is owner-directed (task 1, its own commit)
 
 Hard constraint 5's text gains the attempts dimension, marked *(Amended 2026-09-29,
-owner — no grilling record, owner's instruction of 2026-09-29)*. CLAUDE.md's constraint
+owner — no grilling record, owner's instruction recorded in
+`docs/work/WI-17/implementation-plan.md`)*. CLAUDE.md's constraint
 block and `docs/agents/workflow.md`'s flag list gain `--max-attempts` in the same
 commit (the authoritative-command-list rule).
 
