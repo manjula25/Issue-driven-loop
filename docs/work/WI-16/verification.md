@@ -636,6 +636,14 @@ matches (grep rc=1). All in `evidence/t7-unit-green.log`, rc on the line after e
 command. The pre-edit baseline (287/287, rc=0) was recorded by the implementer before
 the edit; the controller re-ran the post-edit suite itself.
 
+**Verification-before-completion re-ran the proving commands at the final state**
+(`d8519e1`, 2026-09-29 — after the records and review commits, which touch
+`docs/work/` only since `d389b94`): `npm test` → 10 files / 287 tests, rc=0;
+`npm run typecheck` → rc=0. The integration (`npm run test:integration`) and scenarios
+(`npm run test:scenarios`) suites are a stated non-claim for this ticket: nothing in
+their import graph changed in the range (`src/loop.test.ts` and `docs/work/` only), so
+T6's whole-suite captures at `9d1bdc2` remain applicable evidence for those surfaces.
+
 ## Claims → evidence
 
 | # | Claim | Proved by | Output |
