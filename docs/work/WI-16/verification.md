@@ -755,3 +755,12 @@ below, re-performed independently by both reviewers.
   gate's adapter seams use it too). Recorded here rather than re-edited: a
   behavior-preserving widening is optional polish, not honesty repair.
 
+**Verification-before-completion re-ran the proving inspections at the final state**
+(`e8e22c3`, 2026-09-29 — the records commits touch `docs/work/` only): the
+changed-path listing `993d6f2..HEAD` is exactly the seven files — the two documents,
+the plan, the evidence log, and the three records (`verification.md`,
+`implementation-notes.md`, `review.md`) — no source, test, script, or config file;
+`git diff e3e1270..HEAD -- CLAUDE.md docs/agents/workflow.md` is empty (the reviewed
+doc identity is unchanged); and the four no-CI/no-hook lookups were re-run and hold.
+No gate re-runs, per ponytail rec 2 and the section above.
+
