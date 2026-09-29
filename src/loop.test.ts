@@ -18,6 +18,7 @@ import {
   formatSingleIssueResult,
   formatSummary,
   parseCap,
+  parseMaxAttempts,
   parseRetiredFlags,
   parseSourceArgs,
   reproTestPath,
@@ -130,6 +131,13 @@ interface DepOverrides {
   fixOutcome?: FixRunOutcome;
   /** Verification (second) sandbox; the preflight sandbox defaults to a matching baseline. */
   sandbox?: FixSandboxHandle;
+  /**
+   * WI-17 T2: per-CALL verification sandboxes — red on attempt 1, green on
+   * attempt 2, … — falling back to `sandbox` once the sequence runs out. The
+   * red-then-green knob the retry tests need; `sandbox` stays the always-red /
+   * always-green knob.
+   */
+  sandboxSequence?: readonly FixSandboxHandle[];
   /** Preflight (first) sandbox — override to simulate a stale baseline. */
   preflight?: FixSandboxHandle;
   env?: Record<string, string>;
@@ -190,6 +198,8 @@ interface DepOverrides {
 function makeDeps(overrides: DepOverrides = {}) {
   const env = overrides.env ?? {};
   let sandboxCalls = 0;
+  // WI-17 T2: verification-sandbox call counter — indexes `sandboxSequence`.
+  let verificationCalls = 0;
   // WI-13 T8: once the merger has run, the NEXT verification sandbox on the
   // fix branch is the gate's re-verification of the resolved branch — the
   // knob that turns it red must apply only there, never to the primary pass.
@@ -224,7 +234,8 @@ function makeDeps(overrides: DepOverrides = {}) {
       const verification =
         mergerRan && overrides.mergerResolutionFails === true
           ? sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1)
-          : (overrides.sandbox ?? sandboxHandle(SUITE_AFTER_FIX));
+          : (overrides.sandboxSequence?.[verificationCalls] ?? overrides.sandbox ?? sandboxHandle(SUITE_AFTER_FIX));
+      verificationCalls += 1;
       // WI-8 FR-001: same knob for the fresh verification sandbox.
       if (overrides.sandboxCloseThrows !== undefined) {
         const message = overrides.sandboxCloseThrows;
@@ -1662,6 +1673,12 @@ interface QueueDepsConfig {
   mergedPrs?: { number: number; url: string; headRefName: string; body: string }[];
   /** Id whose verification sandbox fails the reproduction test (issue-level failure). */
   failReproFor?: string;
+  /**
+   * WI-17 T2: the id whose FIRST verification sandbox is red (repro fails) and
+   * whose later ones go green — the red-then-green knob the retry tests need;
+   * `failReproFor` stays the always-red knob.
+   */
+  failFirstVerificationFor?: string;
   /** Preflight reports a stale baseline for every issue (harness-level abort). */
   staleBaseline?: boolean;
   /** Preflight reports a stale baseline for this id only — aborts mid-queue. */
@@ -1753,6 +1770,9 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
   // sandbox that follows is the gate's, so a red knob for it must apply only
   // there, never to the lane's primary verification pass.
   const mergerRanFor = new Set<string>();
+  // WI-17 T2: per-issue verification-call counter — `failFirstVerificationFor`
+  // makes only an issue's FIRST verification red, so its retry goes green.
+  const verificationCallsFor = new Map<string, number>();
   const deps = {
     env: {} as Record<string, string>,
     runFixRun: vi.fn(async (input: { branch: string; name?: string }) => {
@@ -1793,8 +1813,11 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
         }
         return track(handle);
       }
+      const seen = (verificationCallsFor.get(active.id) ?? 0) + 1;
+      verificationCallsFor.set(active.id, seen);
       const fails =
         config.failReproFor === active.id ||
+        (config.failFirstVerificationFor === active.id && seen === 1) ||
         (config.mergerResolutionFailsFor === active.id && mergerRanFor.has(active.id));
       const handle = issueSandbox(active, SUITE_AFTER_FIX, fails ? 1 : 0);
       // WI-11 FR-001: same knob for the queue-mode verification sandbox — the
@@ -3961,4 +3984,177 @@ describe("harness-failed label removal widened to the PR-left returns (WI-14 T3b
       return result;
     });
   };
+});
+
+// ---------------------------------------------------------------------------
+// WI-17 T2: bounded fix-attempt retry — --max-attempts (D1), the feedback
+// prompt (D2), deferred escalation (D3), and the attempts-visible records
+// (D5). Every test drives the public seam (runSingleIssue / runQueue) with
+// seeded deps; the PR body stays attempt-silent by design.
+// ---------------------------------------------------------------------------
+
+describe("bounded fix-attempt retry (WI-17 T2, D1/D2/D3)", () => {
+  it("red-with-attempts-remaining retries without escalating: attempt 2 goes green — PR path, no escalation, the first attempt's verdict.failure verbatim in the second prompt beside `attempt 2 of 2`", async () => {
+    // Verification red on attempt 1 (repro did not pass), green on attempt 2.
+    const deps = makeDeps({
+      sandboxSequence: [sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1), sandboxHandle(SUITE_AFTER_FIX)],
+    });
+
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile, maxAttempts: 2 },
+      deps,
+    );
+
+    expect(deps.runFixRun).toHaveBeenCalledTimes(2);
+    expect(outcome.prUrl).toContain("/pull/");
+    // the SECOND prompt carries the first attempt's verdict.failure verbatim
+    // (D2: the attempt header + the failure string, nothing else) — and the
+    // first prompt carries no feedback section at all
+    const secondPrompt = deps.runFixRun.mock.calls[1]![0] as { prompt: string };
+    expect(secondPrompt.prompt).toContain("attempt 2 of 2");
+    expect(secondPrompt.prompt).toContain(VERIFICATION_RED);
+    const firstPrompt = deps.runFixRun.mock.calls[0]![0] as { prompt: string };
+    expect(firstPrompt.prompt).not.toContain("previous verification failed");
+    // the retryable red never escalates (D3): no comment, no label ADD (the
+    // green path's label REMOVE is the only label call there is)
+    expect(deps.commentOnIssue).not.toHaveBeenCalled();
+    expect(deps.setIssueLabel.mock.calls.filter((call) => call[2] === "add")).toHaveLength(0);
+    expect(outcome.escalation).toBeUndefined();
+    // clean main between attempts: the branch is deleted before the re-run
+    expect(deps.deleteBranch).toHaveBeenCalledWith("/tmp/repo", "fix/gh-1");
+    expect(outcome.attempts).toBe(2);
+  });
+
+  it("exhaustion escalates once, with the count: always-red verification, maxAttempts 3 — three fix runs, one escalation, the reason carries `attempt 3 of 3`, and fix/gh-1 is deleted before every re-run", async () => {
+    const deps = makeDeps({ sandbox: sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1) });
+
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile, maxAttempts: 3 },
+      deps,
+    );
+
+    expect(deps.runFixRun).toHaveBeenCalledTimes(3);
+    // escalation exactly once (WI-14 preserved), its Reason line byte-identical
+    // to the outcome's failure — both carrying the attempt count
+    expect(deps.commentOnIssue).toHaveBeenCalledTimes(1);
+    expect(deps.commentOnIssue.mock.calls[0]![2]).toBe(expectedEscalationBody("fix-failed", outcome.failure ?? ""));
+    expect(outcome.failure).toContain(VERIFICATION_RED);
+    expect(outcome.failure).toContain("attempt 3 of 3");
+    // clean-main guarantee: the fix branch is deleted after every red attempt
+    // (twice between attempts) and once more by the exhausted fail() itself
+    expect(deps.deleteBranch.mock.calls.filter(([, deleted]) => deleted === "fix/gh-1")).toHaveLength(3);
+    expect(outcome.prUrl).toBeUndefined();
+    expect(outcome.attempts).toBe(3);
+  });
+
+  it("harness-kind failures never retry: a stale-baseline preflight with maxAttempts 3 — one preflight sandbox, ZERO fix runs, preflight-failed escalation exactly as today", async () => {
+    const deps = makeDeps({ preflight: sandboxHandle(SUITE_AFTER_FIX) }); // stale baseline
+
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile, maxAttempts: 3 },
+      deps,
+    );
+
+    expect(deps.runFixRun).not.toHaveBeenCalled(); // zero fix spend — preflight is attempt-invariant (D3)
+    expect(deps.createFixSandbox).toHaveBeenCalledTimes(1); // the preflight sandbox only, never a second one
+    expect(deps.commentOnIssue).toHaveBeenCalledTimes(1);
+    expect(deps.commentOnIssue.mock.calls[0]![2]).toContain("Outcome: preflight-failed");
+    expect(outcome.failure).toContain("Aborted before the fix run");
+    expect(outcome.failureKind).toBe("harness");
+    expect(outcome.attempts).toBeUndefined();
+  });
+
+  it("a halted run spends no further attempts: the halt fires between attempt 1 (red) and attempt 2 — no second runFixRun, the halted-sibling failure vocabulary, no escalation of its own", async () => {
+    const deps = makeDeps({ sandbox: sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1) });
+    // The halt fires BETWEEN the attempts: the signal is unset until the first
+    // fix run has happened, then carries a sibling lane's harness-level halt —
+    // so attempt 1 runs unaware and the pre-attempt-2 check is what stops it.
+    const haltSignal = {
+      halted: () =>
+        deps.runFixRun.mock.calls.length > 0
+          ? { id: "gh-2", reason: "canary went red — merge reverted" }
+          : undefined,
+      halt: () => {},
+    };
+
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile, maxAttempts: 3 },
+      deps,
+      (section) => section(),
+      haltSignal,
+    );
+
+    expect(deps.runFixRun).toHaveBeenCalledTimes(1); // no attempt 2 after stop-the-line
+    // the existing halted-sibling vocabulary (WI-13 T11), not a new one
+    expect(outcome.failure).toBe("retry skipped — run halted by gh-2: canary went red — merge reverted");
+    // no escalation of its own — the halting sibling owns it
+    expect(deps.commentOnIssue).not.toHaveBeenCalled();
+    expect(outcome.escalation).toBeUndefined();
+    // the lane still leaves clean main behind
+    expect(deps.deleteBranch).toHaveBeenCalledWith("/tmp/repo", "fix/gh-1");
+    // one attempt spent — no figure (D5 renders only > 1)
+    expect(outcome.attempts).toBeUndefined();
+  });
+});
+
+describe("attempt visibility in the records (WI-17 T2, D5)", () => {
+  it("formatSingleIssueResult renders `attempts: 2` only when > 1 — and the PR body stays attempt-silent", async () => {
+    const deps = makeDeps({
+      sandboxSequence: [sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1), sandboxHandle(SUITE_AFTER_FIX)],
+    });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile, maxAttempts: 2 },
+      deps,
+    );
+    expect(outcome.prUrl).toContain("/pull/");
+
+    const report = formatSingleIssueResult({ kind: "run", outcome });
+    expect(report.stdout).toContain("attempts: 2");
+
+    // D5: a reviewer judges the diff, not the journey — no attempts figure in the PR body
+    const body = deps.createPr.mock.calls[0]![0].body as string;
+    expect(body).not.toContain("attempts:");
+  });
+
+  it("formatSummary renders the per-issue attempts line only when > 1: a 2-attempt queue run carries `gh-1: attempts: 2`, a default run renders no figure", async () => {
+    // A 2-attempt green queue run: gh-1's first verification is red, its
+    // second goes green under the ceiling 2 — fixed, PR'd, and the spend
+    // ledger names both attempts.
+    const { deps } = makeQueueDeps({ issues: [queueIssue(1)], failFirstVerificationFor: "gh-1" });
+    const summary = await runQueue(queueRunInput({ maxAttempts: 2 }), deps);
+
+    expect(summary.fixed).toEqual(["gh-1"]);
+    expect(summary.attempts).toEqual([["gh-1", 2]]);
+    expect(formatSummary(summary)).toContain("gh-1: attempts: 2");
+
+    // the default (no --max-attempts) renders no figure anywhere (D1: absent = 1)
+    const { deps: singleAttemptDeps } = makeQueueDeps({ issues: [queueIssue(1)] });
+    const defaultSummary = await runQueue(queueRunInput(), singleAttemptDeps);
+    expect(defaultSummary.attempts).toEqual([]);
+    expect(formatSummary(defaultSummary)).not.toContain("attempts:");
+  });
+});
+
+describe("parseMaxAttempts (--max-attempts validation, WI-17 T2, D1)", () => {
+  it("accepts an integer >= 1 and rejects everything else, naming the flag", () => {
+    expect(parseMaxAttempts("2")).toBe(2);
+    expect(parseMaxAttempts("1")).toBe(1);
+    expect(() => parseMaxAttempts("0")).toThrow(/--max-attempts/);
+    expect(() => parseMaxAttempts("-1")).toThrow(/--max-attempts/);
+    expect(() => parseMaxAttempts("abc")).toThrow(/--max-attempts/);
+  });
+
+  it("absent flag = 1 attempt (D1): a red verification fails once with today's byte-identical reason — no retry, no deferral, no attempts figure", async () => {
+    const deps = makeDeps({ sandbox: sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1) });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      deps,
+    );
+
+    expect(deps.runFixRun).toHaveBeenCalledTimes(1); // exactly one attempt — today's behavior
+    expect(outcome.failure).toBe(VERIFICATION_RED); // byte-identical reason, no attempt figure
+    expect(deps.commentOnIssue).toHaveBeenCalledTimes(1); // escalation fires on the single red, as today
+    expect(outcome.attempts).toBeUndefined();
+    expect(formatSingleIssueResult({ kind: "run", outcome }).stderr).not.toContain("attempts:");
+  });
 });

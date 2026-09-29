@@ -248,6 +248,14 @@ export interface SingleIssueInput {
   readonly imageName: string;
   readonly agent: AgentSpec;
   readonly profile: ProjectProfile;
+  /**
+   * WI-17 (D1): the per-issue fix-attempt ceiling — `--max-attempts N` at the
+   * CLI. Absent means 1, today's exact behavior (byte-equivalent default);
+   * the lane validates nothing here (the CLI validates at startup, before any
+   * spend). Each attempt is a fresh `runFixRun` ending at the independent
+   * fresh-sandbox verification gate.
+   */
+  readonly maxAttempts?: number;
 }
 
 export interface LoopOutcome {
@@ -262,6 +270,15 @@ export interface LoopOutcome {
    */
   readonly failureKind?: "harness";
   readonly newFailures?: readonly string[];
+  /**
+   * WI-17 (D5): set when the lane spent MORE THAN ONE fix attempt (the
+   * `--max-attempts` ceiling above the default 1) — the spend-ledger figure
+   * `formatSummary` and `formatSingleIssueResult` render as `attempts: N`.
+   * Absent on single-attempt runs (the default), so every pre-WI-17 outcome
+   * and surface stays byte-identical. The PR body never carries it (a
+   * reviewer judges the diff, not the journey).
+   */
+  readonly attempts?: number;
   /**
    * Attachment URLs whose fetch failed (FR-004) — an input-quality note, never
    * a verification failure. Recorded loudly wherever the issue is reported.
@@ -843,6 +860,29 @@ async function clearHarnessFailedLabel(
   return {};
 }
 
+/**
+ * WI-17 (D1): the attempt figure rides a failure reason ONLY when the ceiling
+ * is above the default — a default run (absent `--max-attempts`, or `1`) keeps
+ * today's reasons byte-identical, so the exhausted-red and fix-run-failure
+ * strings the WI-14 escalation comment and the FAILED line quote are unchanged
+ * for every pre-WI-17 posture.
+ */
+function withAttemptCount(reason: string, attempt: number, maxAttempts: number): string {
+  return maxAttempts > 1 ? `${reason} (attempt ${attempt} of ${maxAttempts})` : reason;
+}
+
+/**
+ * WI-17 (D2, ponytail recs 1+2): the retry prompt's feedback section, built at
+ * the lane's call site and APPENDED to `buildFixPrompt`'s returned string —
+ * `buildFixPrompt` keeps its exact signature. The payload is exactly the
+ * attempt header plus the previous attempt's `verdict.failure` verbatim (an
+ * already-secrets-guarded output path), nothing else: no second copy of the
+ * test ids, no diagnosis, no suggested fix.
+ */
+function buildAttemptFeedback(nextAttempt: number, maxAttempts: number, failure: string): string {
+  return `\n\nattempt ${nextAttempt} of ${maxAttempts} — previous verification failed:\n${failure}\n`;
+}
+
 export async function runSingleIssue(
   input: SingleIssueInput,
   deps: LoopDeps,
@@ -1017,22 +1057,20 @@ async function runSingleIssueLane(
     };
   }
 
-  const fix = await deps.runFixRun({
-    cwd: input.repoDir,
-    prompt,
-    imageName: input.imageName,
-    agent: input.agent,
-    branch,
-    name: input.issue.id,
-    // Copy the single top-level `.loop-harness` directory, never per-file
-    // stagedPaths: Sandcastle's copyToWorktree runs `cp -R` without creating
-    // dest parent directories, so a nested path like
-    // `.loop-harness/attachments/gh-1/aaaa` fails in a fresh worktree. The
-    // directory copy also carries the staging `.gitignore` (and the
-    // machine-local profile) into the worktree; the prompt's
-    // never-commit-anything-under-`.loop-harness/` rule is the paired defense.
-    ...(staged.length > 0 ? { copyToWorktree: [".loop-harness"] } : {}),
-  });
+  // WI-17 (D1/D2/D3): the bounded fix-attempt loop. Each attempt is a FRESH
+  // `runFixRun` ending at the independent fresh-sandbox verification gate
+  // (constraint 2 — an agent's own signal is never evidence on ANY attempt);
+  // a red verdict with attempts remaining does NOT escalate: the lane deletes
+  // the branch (clean main — the attempt-5/6 lesson's machinery, the same
+  // delete `fail()` uses), records the previous attempt's `verdict.failure`
+  // as the next prompt's feedback section (appended HERE at the call site —
+  // `buildFixPrompt` keeps its signature, ponytail rec 1), and loops.
+  // Escalation keeps WI-14's exactly-once posture, deferred to the moment the
+  // lane finally fails — the exhausted red or the fix-run failure — with the
+  // reason carrying the attempt count. Default maxAttempts 1 collapses to
+  // today's byte-equivalent single pass.
+  const maxAttempts = input.maxAttempts ?? 1;
+  let attempt = 0;
 
   // A failed run must not leave its fix branch behind — the next run would
   // trip over it (attempt-5/6 lesson).
@@ -1050,68 +1088,132 @@ async function runSingleIssueLane(
       // WI-8 (FR-001): a green-baseline run that later fails verification
       // still carries a preflight teardown failure, if there was one.
       ...(preflightTeardown !== undefined ? { teardownFailure: preflightTeardown } : {}),
+      // WI-17 (D5): the spend-ledger figure — only when more than one attempt
+      // was spent, so single-attempt outcomes stay byte-identical.
+      ...(attempt > 1 ? { attempts: attempt } : {}),
       ...escalation,
     };
   };
 
-  if (fix.commits.length === 0) {
-    return fail("Fix run produced no commits — nothing to verify or PR.");
+  let passed = false;
+  let feedback = "";
+  let redEvidence = "";
+  let greenEvidence = "";
+  // WI-8 (FR-001): verification teardown parity, carried across attempts —
+  // the EARLIEST verification origin wins (the established preflight-first
+  // precedence), and it rides whichever outcome the final attempt decided,
+  // never displacing it.
+  let sandboxTeardown: string | undefined;
+  while (!passed) {
+    attempt += 1;
+    // WI-17 (the sandcastle-comparison gap, 2026-09-29): the run-level halt is
+    // checked BEFORE each attempt after the first — a lane mid-retry must not
+    // spend another attempt after stop-the-line fired. The halting sibling
+    // owns the escalation; this lane takes the existing halted-sibling
+    // vocabulary (WI-13 T11) and escalates nothing of its own.
+    if (attempt > 1) {
+      const haltedBy = haltSignal.halted();
+      if (haltedBy !== undefined) {
+        await deps.deleteBranch(input.repoDir, branch);
+        const haltedTeardown = preflightTeardown ?? sandboxTeardown;
+        return {
+          branch,
+          failure: `retry skipped — run halted by ${haltedBy.id}: ${haltedBy.reason}`,
+          ...(attachmentFailures.length > 0 ? { attachmentFailures: [...attachmentFailures] } : {}),
+          ...(haltedTeardown !== undefined ? { teardownFailure: haltedTeardown } : {}),
+          ...(attempt - 1 > 1 ? { attempts: attempt - 1 } : {}),
+        };
+      }
+    }
+    const attemptPrompt = feedback === "" ? prompt : prompt + feedback;
+    if (feedback !== "") {
+      // WI-17 (D2): the feedback-augmented prompt reaches the third-party API
+      // — the COMBINED string passes the secrets guard like every emitted
+      // prompt (the base prompt is already guarded above, before preflight).
+      assertNoSecrets([attemptPrompt], deps.env);
+    }
+    const fix = await deps.runFixRun({
+      cwd: input.repoDir,
+      prompt: attemptPrompt,
+      imageName: input.imageName,
+      agent: input.agent,
+      branch,
+      name: input.issue.id,
+      // Copy the single top-level `.loop-harness` directory, never per-file
+      // stagedPaths: Sandcastle's copyToWorktree runs `cp -R` without creating
+      // dest parent directories, so a nested path like
+      // `.loop-harness/attachments/gh-1/aaaa` fails in a fresh worktree. The
+      // directory copy also carries the staging `.gitignore` (and the
+      // machine-local profile) into the worktree; the prompt's
+      // never-commit-anything-under-`.loop-harness/` rule is the paired defense.
+      ...(staged.length > 0 ? { copyToWorktree: [".loop-harness"] } : {}),
+    });
+
+    if (fix.commits.length === 0) {
+      return fail(withAttemptCount("Fix run produced no commits — nothing to verify or PR.", attempt, maxAttempts));
+    }
+
+    // Fresh-sandbox verification: the agent's own "done" is never evidence.
+    redEvidence = extractEvidence(fix.stdout, "red");
+    greenEvidence = extractEvidence(fix.stdout, "green");
+    assertNoSecrets([redEvidence, greenEvidence], deps.env);
+
+    // WI-13 T8 (FR-008): the verification block — fresh sandbox install →
+    // reproduction test → full suite → `diffVerification` — is ONE
+    // module-private implementation (`verifyInFreshSandbox` below), reused
+    // verbatim by the merger gate's re-verification of a resolved branch: same
+    // rules, same evidence, no divergence between the two call sites. Pure
+    // extraction — the outcomes are byte-equivalent with the former inline
+    // block (the existing suite is the pin).
+    const { verdict, teardownFailure: attemptTeardown } = await verifyInFreshSandbox(input, deps, branch);
+    sandboxTeardown ??= attemptTeardown;
+    if (verdict.passed) {
+      passed = true;
+    } else if (attempt >= maxAttempts) {
+      // D3: escalation fires exactly once, on the FINAL red, the reason
+      // carrying the count — the WI-14 comment's Reason line and the FAILED
+      // line stay byte-identical to each other (one string, as today).
+      const failOutcome = await fail(withAttemptCount(verdict.failure, attempt, maxAttempts), verdict.newFailures);
+      // WI-11 (FR-002): the fail()-path teardown failure rides the decided
+      // outcome instead of being dropped. The failure reason and failure-kind
+      // are untouched; when both early teardowns failed the preflight still
+      // wins, exactly as on the PR'd path.
+      const earlyTeardown = preflightTeardown ?? sandboxTeardown;
+      return { ...failOutcome, ...(earlyTeardown !== undefined ? { teardownFailure: earlyTeardown } : {}) };
+    } else {
+      // Red with attempts remaining: no escalation — clean main, then the
+      // next attempt's prompt carries this verdict's failure verbatim (D2).
+      await deps.deleteBranch(input.repoDir, branch);
+      feedback = buildAttemptFeedback(attempt + 1, maxAttempts, verdict.failure);
+    }
   }
 
-  // Fresh-sandbox verification: the agent's own "done" is never evidence.
-  const redEvidence = extractEvidence(fix.stdout, "red");
-  const greenEvidence = extractEvidence(fix.stdout, "green");
-  assertNoSecrets([redEvidence, greenEvidence], deps.env);
+  // Green on ANY attempt takes the identical PR path (D3): a fix is a fix,
+  // and the PR body stays attempt-silent (D5 — the summary is the ledger).
+  // `diffVerification` passes only with an empty new-failure set, so the
+  // green verdict is exactly `{ passed: true, newFailures: [] }`.
+  const verification = { passed: true as const, newFailures: [] as readonly string[] };
+  const title = `[loop] fix ${input.issue.id}: ${input.issue.description.split("\n")[0].replace(/^#\s*/, "")}`;
+  const body = buildPrBody(
+    input.issue,
+    redEvidence,
+    greenEvidence,
+    verification,
+    attachmentFailures,
+    input.profile.autoMerge === true,
+  );
+  assertNoSecrets([title, body], deps.env);
 
-  // WI-13 T8 (FR-008): the verification block — fresh sandbox install →
-  // reproduction test → full suite → `diffVerification` — is ONE
-  // module-private implementation (`verifyInFreshSandbox` below), reused
-  // verbatim by the merger gate's re-verification of a resolved branch: same
-  // rules, same evidence, no divergence between the two call sites. Pure
-  // extraction — the outcomes are byte-equivalent with the former inline
-  // block (the existing suite is the pin).
-  const { verdict, teardownFailure: sandboxTeardown } = await verifyInFreshSandbox(input, deps, branch);
-  let prUrl: string | undefined;
-  // WI-8 (FR-001): verification teardown parity. A close() throw inside the
-  // helper is caught, never propagated: it rides whichever outcome the
-  // verification decided — the fail outcome below (WI-11 FR-002), or the
-  // PR'd outcome on the green path.
-  let failOutcome: LoopOutcome | undefined;
-  if (!verdict.passed) {
-    failOutcome = await fail(verdict.failure, verdict.newFailures);
-  } else {
-    // `diffVerification` passes only with an empty new-failure set, so the
-    // green verdict is exactly `{ passed: true, newFailures: [] }`.
-    const verification = { passed: true as const, newFailures: [] as readonly string[] };
-    const title = `[loop] fix ${input.issue.id}: ${input.issue.description.split("\n")[0].replace(/^#\s*/, "")}`;
-    const body = buildPrBody(
-      input.issue,
-      redEvidence,
-      greenEvidence,
-      verification,
-      attachmentFailures,
-      input.profile.autoMerge === true,
-    );
-    assertNoSecrets([title, body], deps.env);
-
-    const pr = await deps.createPr({ repoDir: input.repoDir, title, body, base: "main", head: branch });
-    prUrl = pr.url;
-  }
+  const pr = await deps.createPr({ repoDir: input.repoDir, title, body, base: "main", head: branch });
+  const prUrl = pr.url;
 
   // WI-6 T3 (D3): the auto-merge chain runs AFTER the verification sandbox's
   // finally has closed it — merging (with --delete-branch) deletes the very
-  // branch that sandbox sits on. The failed paths returned just above; reaching
-  // here means verification green + PR open.
+  // branch that sandbox sits on. Every failed path returned inside the loop;
+  // reaching here means verification green + PR open.
   // WI-8 (FR-001): whichever early sandbox teardown failed rides every PR'd
   // return below — the preflight wins if both did (it happened first).
   const earlyTeardown = preflightTeardown ?? sandboxTeardown;
-  if (failOutcome !== undefined) {
-    // WI-11 (FR-002): the fail()-path teardown failure rides the decided
-    // outcome instead of being dropped. The failure reason and failure-kind
-    // are untouched; when both early teardowns failed the preflight still
-    // wins, exactly as on the PR'd path.
-    return { ...failOutcome, ...(earlyTeardown !== undefined ? { teardownFailure: earlyTeardown } : {}) };
-  }
   // `let` for WI-13 T8: the merger gate's re-verification sandbox is another
   // EARLY origin (it runs pre-merge), so its teardown failure folds into the
   // PR'd outcome below — first origin still wins (preflight, then the primary
@@ -1119,10 +1221,12 @@ async function runSingleIssueLane(
   let prOutcome: LoopOutcome = {
     branch,
     prUrl,
+    // WI-17 (D5): the spend-ledger figure, only when the lane retried.
+    ...(attempt > 1 ? { attempts: attempt } : {}),
     ...(attachmentFailures.length > 0 ? { attachmentFailures: [...attachmentFailures] } : {}),
     ...(earlyTeardown !== undefined ? { teardownFailure: earlyTeardown } : {}),
   };
-  if (prUrl !== undefined && input.profile.autoMerge === true) {
+  if (input.profile.autoMerge === true) {
     // WI-13 T6b (both criticals): the whole opted-in chain — review pass
     // (shared REVIEW_BRANCH), merge, canary, revert, issue-close (main + the
     // clone's checkout) — runs under the per-run mutex in queue mode, so
@@ -1582,6 +1686,9 @@ async function runCanary(
       // outcome too — the uncanaried verdict above stands untouched, but the
       // verification sandbox's close() failure is not dropped by it.
       ...(prOutcome.teardownFailure !== undefined ? { teardownFailure: prOutcome.teardownFailure } : {}),
+      // WI-17 (D5): the spend-ledger figure rides the fresh object too — the
+      // uncanaried verdict stands untouched beside it.
+      ...(prOutcome.attempts !== undefined ? { attempts: prOutcome.attempts } : {}),
       uncanaried,
     };
   }
@@ -1732,6 +1839,9 @@ async function runCanary(
     // it), while the canary reason keeps its WI-7 home in
     // `reverted.teardownFailure` below — two origins, two labeled homes.
     ...(prOutcome.teardownFailure !== undefined ? { teardownFailure: prOutcome.teardownFailure } : {}),
+    // WI-17 (D5): the spend-ledger figure rides the fresh object too — the
+    // reverted verdict stands untouched beside it.
+    ...(prOutcome.attempts !== undefined ? { attempts: prOutcome.attempts } : {}),
     reverted: {
       id: input.issue.id,
       prUrl,
@@ -1770,6 +1880,13 @@ export interface QueueRunInput {
    * No default. Validated (integer ≥ 1) by the CLI at startup when present.
    */
   readonly cap: number | undefined;
+  /**
+   * WI-17 (D1): the per-issue fix-attempt ceiling — `--max-attempts N` at the
+   * CLI, threaded to every lane identically. Absent means 1 attempt per issue
+   * (today's behavior). Validated (integer ≥ 1) by the CLI at startup when
+   * present, before any acquisition or spend.
+   */
+  readonly maxAttempts?: number;
   /**
    * WI-3 (FR-007): a pre-parsed queue from `--spec-doc` / `--plain-list`.
    * When present it REPLACES GitHub acquisition — `ghJson` is never called.
@@ -1856,6 +1973,14 @@ export interface QueueSummary {
   readonly uncanariedMerges: [string, string][];
   /** Source label (WI-3 FR-007) — set only for non-GitHub queue sources. */
   readonly source?: string;
+  /**
+   * WI-17 (D5): [id, attempts] for every issue whose lane spent MORE THAN ONE
+   * fix attempt — the spend ledger `formatSummary` renders as the per-issue
+   * `attempts: N` line. Always populated by `runQueue`'s snapshot (empty when
+   * no lane retried); optional only so pre-WI-17 hand-built literals keep
+   * typechecking. Single-attempt runs render no figure, by design.
+   */
+  readonly attempts?: [string, number][];
 }
 
 /**
@@ -1960,6 +2085,8 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
   const reviewSkipped: [string, string][] = [];
   const reverted: RevertedRecord[] = [];
   const uncanariedMerges: [string, string][] = [];
+  /** WI-17 (D5): per-issue attempts figures — an entry only when a lane spent > 1. */
+  const attempts: [string, number][] = [];
   const snapshot = (): QueueSummary => ({
     attempted: [...attempted],
     fixed: [...fixed],
@@ -1976,6 +2103,7 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
     reviewSkipped: [...reviewSkipped],
     reverted: [...reverted],
     uncanariedMerges: [...uncanariedMerges],
+    attempts: [...attempts],
     ...(input.sourceName !== undefined ? { source: input.sourceName } : {}),
   });
 
@@ -2067,6 +2195,9 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
               imageName: input.imageName,
               agent: input.agent,
               profile: input.profile,
+              // WI-17 (D1): the per-issue attempt ceiling threads to every
+              // lane identically — absent, the lane defaults to one attempt.
+              ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
             },
             deps,
             gitChainLock,
@@ -2130,6 +2261,12 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
       // throw so the aborting summary still carries the ⚠️ UNCANARIED MERGE line.
       if (outcome.uncanaried !== undefined) {
         uncanariedMerges.push([outcome.uncanaried.id, uncanariedDetail(outcome.uncanaried)]);
+      }
+      // WI-17 (D5): the spend ledger is honest for every settled lane — PR'd,
+      // failed, reverted, uncanaried alike — but only ever records a figure
+      // when the lane actually spent more than one attempt.
+      if (outcome.attempts !== undefined) {
+        attempts.push([issue.id, outcome.attempts]);
       }
       if (outcome.prUrl) {
         fixed.push(issue.id);
@@ -2331,6 +2468,11 @@ export function formatSummary(summary: QueueSummary): string {
   return [
     ...(summary.source !== undefined ? [`source: ${summary.source}`] : []),
     `Run summary — attempted: ${summary.attempted.length} (fixed: ${summary.fixed.length}, failed: ${summary.failed.length}) | skipped-duplicate: ${summary.skippedDuplicate.length} | skipped-merged: ${summary.skippedMerged.length} | not-admitted: ${summary.notAdmitted.length}`,
+    // WI-17 (D5): the operator's spend ledger — the per-issue attempts figure,
+    // rendered only when an issue spent MORE THAN one fix attempt (an entry
+    // exists only then). Single-attempt runs render no figure, and the PR body
+    // stays attempt-silent by design.
+    ...(summary.attempts ?? []).map(([id, n]) => `${id}: attempts: ${n}`),
     ...summary.prUrls.map((url) => `PR: ${url}`),
     // A mergedPrs entry exists only on a canary-green merge (red reverts and
     // never reaches this list), so the canary result is pinned here (T4
@@ -2370,6 +2512,22 @@ export function parseCap(raw: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     throw new Error(`--max-issues must be an integer >= 1 (got "${raw}")`);
+  }
+  return n;
+}
+
+/**
+ * WI-17 (D1): `--max-attempts` — the per-issue fix-attempt ceiling, following
+ * the `--max-issues` precedent with ONE difference: absent the flag the
+ * ceiling is 1, today's exact behavior (the default must never silently
+ * multiply spend). A passed value is validated at startup when present,
+ * before any acquisition or spend — integer >= 1, else this thrown usage
+ * error.
+ */
+export function parseMaxAttempts(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(`--max-attempts must be an integer >= 1 (got "${raw}")`);
   }
   return n;
 }
@@ -2516,6 +2674,11 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
     if (result.outcome.merged !== undefined) {
       stdout.push(`Merged: ${result.outcome.merged.prUrl} @ ${result.outcome.merged.mergeCommit}`);
     }
+    // WI-17 (D5): the spend-ledger figure — rendered only when the lane spent
+    // more than one attempt; the PR body itself stays attempt-silent.
+    if (result.outcome.attempts !== undefined) {
+      stdout.push(`attempts: ${result.outcome.attempts}`);
+    }
     // WI-6 (FR-008): a failed close is bookkeeping noise on a merged outcome
     // — loud (guarded, stderr), never fatal.
     if (result.outcome.closeFailure !== undefined) {
@@ -2546,6 +2709,11 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
   // never sees the guard env — each stderr line below is guarded at the
   // actual emission seam in `main`, like every other emitted string.
   const stderr = [`Loop finished without a PR — ${result.outcome.failure}`];
+  // WI-17 (D5): same spend-ledger figure on the failure arm — only when > 1
+  // attempt was spent, never a second line for a single-attempt run.
+  if (result.outcome.attempts !== undefined) {
+    stderr.push(`attempts: ${result.outcome.attempts}`);
+  }
   // WI-8 (FR-002): the teardown line rides after the failure line — recorded,
   // never deciding the outcome that was already earned.
   if (result.outcome.teardownFailure !== undefined) {
@@ -2576,7 +2744,8 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
 // ---------------------------------------------------------------------------
 // CLI entry (WI-2: queue mode is the default; --issue N is the override):
 // npm run loop -- --repo <dir-or-owner/name> [--issue <n>] [--label <label>]
-//                [--max-issues <n>]
+//                [--max-issues <n>] [--max-attempts <n>]  (WI-17: per-issue
+//                fix-attempt ceiling, default 1)
 //                [--spec-doc <path> | --plain-list <path>]  (WI-3: replaces
 //                GitHub issue acquisition with a pre-parsed source)
 //                --provider <name>
@@ -2609,6 +2778,12 @@ async function main(): Promise<void> {
   // still validated here, before any acquisition or spend.
   const maxIssuesArg = optFlag("max-issues");
   const cap = maxIssuesArg === undefined ? undefined : parseCap(maxIssuesArg);
+  // WI-17 (D1): the per-issue fix-attempt ceiling — absent the flag, ONE
+  // attempt per issue (today's exact behavior, byte-equivalent default). A
+  // passed value is validated here, before any env load beyond this point,
+  // acquisition, clone, or sandbox spend.
+  const maxAttemptsArg = optFlag("max-attempts");
+  const maxAttempts = maxAttemptsArg === undefined ? 1 : parseMaxAttempts(maxAttemptsArg);
   const label = optFlag("label");
   // WI-3 (FR-007): validated and parsed before any env load, clone, worktree,
   // or sandbox — a bad source costs nothing.
@@ -2885,7 +3060,9 @@ async function main(): Promise<void> {
     ) as GitHubIssueInput;
     const issue = normalizeGitHubIssue(raw);
     const result = await runOverrideIssue(
-      { issue, repoDir, imageName, agent, profile },
+      // WI-17 (D1): the attempt ceiling applies in single-issue mode too — the
+      // `--issue` override bypasses the ISSUE-count ceiling, not this one.
+      { issue, repoDir, imageName, agent, profile, ...(maxAttemptsArg !== undefined ? { maxAttempts } : {}) },
       allDeps,
     );
     const report = formatSingleIssueResult(result);
@@ -2928,6 +3105,8 @@ async function main(): Promise<void> {
           profile,
           ...(label !== undefined ? { label } : {}),
           cap,
+          // WI-17 (D1): threaded to every lane identically; absent = 1 attempt.
+          ...(maxAttemptsArg !== undefined ? { maxAttempts } : {}),
           ...(source !== undefined
             ? { sourceIssues: source.issues, sourceName: source.sourceName }
             : {}),
