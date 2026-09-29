@@ -1,123 +1,129 @@
-# Delivery — WI-16 T6
+# Delivery — WI-16 T7
 
-*(T5's delivery record, previously in this file, is preserved in git history and in merged
-PR #28.)*
+*(T6's delivery record, previously in this file, is preserved in git history and in merged
+PR #29.)*
 
 ## Work item
 
-WI-16 T6 — Scenario 3: a stale project profile aborts before the fix run (ticket
-`docs/work/WI-16/tickets/t6-scenario-profile-staleness.md`).
+WI-16 T7 — TD6: the prompt assertions narrowed to the interface (ticket
+`docs/work/WI-16/tickets/t7-td6-prompt-assertions.md`; spec FR-012).
 
 ## Summary
 
-T6 drives the real CLI's queue path against the shared fixture with a profile that no
-longer matches the code, in both stale directions, and asserts the run aborts BEFORE
-the fix agent — no PR, no branch, an untouched origin/main tip, issue #1 still open.
-Test 1 seeds the code having drifted after onboarding (a teammate's pushed test
-asserting the documented truncate contract, failing against the seeded latent defect —
-a fresh-baseline failure the profile's `baselineFailures: []` does not record) and
-asserts the mismatch arm: the FAILED line names the profile's staleness and
-`Re-run onboarding`. Test 2 seeds the other direction — `testCmd` becomes
-`echo baseline-green`, exit 0 executing no test — and asserts the unreadable arm:
-silence is rejected, never read as "no new failures". Both runs escalate on the
-`preflight-failed` arm (WI-14), and both escalation read-backs are residue-proof: the
-label is removed test-side before the run and only comments newer than a pre-run
-baseline count, so each assertion is THIS run's act.
+The suite's assertions on `buildFixPrompt`'s output now pin only interface tokens —
+things the harness itself produces or parses back at a seam it depends on. The one
+ordinary-language prose regex, `expect(prompt).toMatch(/commit only the fix and the
+reproduction test/i)`, is deleted (it pinned the phrasing of an instruction the harness
+never parses back; rewording the prompt would have broken the test), and test 2 is
+retitled to name what it now pins (the `.loop-harness/` token the nesting guard owns).
+Exactly two edits to `src/loop.test.ts`; the nine retained `toContain` pins are each
+classified as interface in the classification table, which lives once, in the
+verification record (ponytail rec 1 — an in-code comment block would be a second copy
+that drifts). No production source is touched: the ticket is test-only, and
+`src/loop.ts` is unchanged in the whole range.
 
-Planning found the ticket's three suggested seeds all land in the unreadable arm
-(proven from `SUITE_SUMMARY_RE`); the criterion-1 seed is a pushed failing test,
-recorded openly as plan D2. The implement code-quality review found test 1's
-escalation read-backs could pass on a prior run's residue — fixed with five minors at
-`5e67a49`, whole-suite green re-captured at that identity.
+Criterion 3's honest arm: the removed assertion's behavior is enforced where it lives
+only for the `.loop-harness/` half (the nesting guard, `pathCommittedOnBranch`,
+`src/loop.ts:924`, tested at `src/loop.test.ts:3213`); the full diff-scope half
+("only the fix and the reproduction test") is instructed (prompt step 4) and
+pre-merge-reviewed but never mechanically enforced — recorded as a finding in the
+work item's follow-ups, not silently dropped.
 
 ## Plan artifacts
 
-- Plan: `docs/work/WI-16/implementation-plan-t6.md` (approved; ponytail rec 1 applied;
-  three in-place corrections recorded inside it)
-- Ledger: `docs/work/WI-16/implementation-notes.md` entries 14–16
-- Review: `docs/work/WI-16/review.md` (T6 candidate — implement reviews plus the
+- Plan: `docs/work/WI-16/implementation-plan-t7.md` (approved; ponytail rec 1 applied;
+  the stage-4 standards-axis numeral correction recorded inside it)
+- Ledger: `docs/work/WI-16/implementation-notes.md` entries 17–18
+- Review: `docs/work/WI-16/review.md` (T7 candidate — implement reviews plus the
   stage-4 four-axis gate)
-- Verification: `docs/work/WI-16/verification.md` (T6 section)
+- Verification: `docs/work/WI-16/verification.md` (T7 section, incl. the
+  classification table — its one home)
+- Evidence: `docs/work/WI-16/evidence/t7-unit-green.log`
 
 ## Verification
 
-Fresh at the code identity `5e67a49`, with the verification-before-completion pass
-re-running the proving commands at the final state: `npm run test:scenarios` —
-`Test Files 4 passed (4)`, `Tests 11 passed (11)`, 432.85s (warm; the cold pre-fix
-capture's 3448.46s remains in history), `rc=0` (`evidence/t6-final-suite-green.log`,
-2026-09-29; only `docs/work/` paths differ between `5e67a49` and the final state, so
-the capture's inputs are bit-identical). `npm run typecheck` rc=0. Unit gate 10 files /
-287 tests rc=0. Focused 2/2 in `evidence/t6-scenario3-green.log` (78.53s, rc=0, both
-red-run report lines carried beside the green results).
+Fresh, re-run at the final state by the verification-before-completion pass
+(`2782f17`) and again first-hand by the stage-4 evidence axis: `npm test` —
+`Test Files 10 passed (10)`, `Tests 287 passed (287)`, rc=0, identical to the
+pre-edit count (an assertion was removed, never a test block); `npm run typecheck`
+rc=0; `grep -n "toMatch(/commit only" src/loop.test.ts` → no matches (grep rc=1).
+All in `evidence/t7-unit-green.log`, rc captured on the line after each command.
 
 ## Evidence boundary
 
-- "No spend" is proven by the abort ordering — the FAILED reason IS the baseline
-  problem, no fix branch exists, and the provider env are placeholders the preflight
-  path never dials — not by billing (the agent is scripted anyway).
-- Does not cover a stale `installCmd`, a third arm shape, or any fix-agent behavior
-  (never reached). Durations are environment-bound (warm/cold spread disclosed in
-  three places).
-- The cosmetic `Re-run onboarding..` double period (`src/loop.ts:1009`) is recorded in
-  verification.md's remaining risks, not fixed — the ticket's finding-not-licence
-  boundary.
+- The retained assertions are **interface pins, not behavioral tests** — FR-012 says
+  so rather than pretending otherwise. A green describe block proves the prompt
+  carries the tokens, nothing about agent behavior.
+- The diff-scope gap is **not closed** by this ticket: no changed-files allowlist
+  exists anywhere in the harness; closing it would be new `src/` behavior.
+- Integration (`npm run test:integration`) and scenarios (`npm run test:scenarios`)
+  are a stated non-claim: nothing in their import graph changed in the range
+  (`src/loop.test.ts` and `docs/work/` only), so T6's whole-suite captures (made at
+  code identity `5e67a49`) remain applicable evidence for those surfaces.
 
 ## Non-claims
 
-- Nothing about a live model or API spend anywhere in T6.
-- FR-009's "deliberately not exercised" note is superseded in this one respect by
-  WI-14's escalation (asserted here as positive evidence) — a recorded observation,
-  not a spec edit.
+- Nothing about a live model, API spend, Docker, or the fixture — the ticket is
+  unit-surface only.
+- Other prose-ish `toMatch` regexes elsewhere in `src/loop.test.ts` (harness-generated
+  failure and summary strings) are outside FR-012's scope, flagged by the implementer
+  and recorded in `review.md` as future TD6-style candidates.
 
 ## Remaining risks
 
+- **The diff-scope finding** (follow-ups): the fix branch's changed-files scope is
+  instructed and pre-merge-reviewed but never mechanically enforced — a candidate for
+  a future work item, owned by whoever picks it up.
 - **I1 (carried forward):** `specification.md` FR-004's standing text still describes
   the pre-D1 force-push reset semantics; needs a recorded spec amendment.
-- T5 minors M1–M4 (carried forward, `review.md` history / PR #28).
-- The label's removal side (on a later verified delivery) is covered by the unit
-  surface, not by a scenario.
+- T5 minors M1–M4 and the worktree cleanups (`wi-16-t4`/`t5`/`t6`, `wi-16-t7` after
+  merge) — carried forward.
+- The cosmetic `Re-run onboarding..` double period (`src/loop.ts:1009`), carried
+  from T6.
 
 ## Review status
 
-Implement lifecycle: specification **PASS** (three rounds at `b145f0d` → `8504434`,
-two record corrections folded in) and code-quality **APPROVED** at `a4cdaa1` after
-the residue-proofing fix. Stage-4 four-axis gate at `9d1bdc2`: repository standards,
-specification fidelity, evidence and risk integrity (commands re-run by the axis
-itself), unnecessary complexity — **all four PASS**, zero blocking findings; the
-evidence axis's three stale-anchor corrections applied in place at `baa54fe`.
+Implement lifecycle: specification **PASS** and code-quality **APPROVED** — two
+rounds each, final both at `0af3ae3` (the first round's two records minors corrected
+in place, which changed the candidate and triggered the reruns; the third minor
+accepted as-is with rationale in ledger entry 17). Stage-4 four-axis gate at
+`2782f17`: repository standards **PASS** after its one blocking finding (the plan's
+"seven" beside a list of eight — the numeral-beside-its-list lesson's fourth recorded
+recurrence, now in the CLAUDE.md lesson entry) was fixed in place and re-confirmed;
+specification fidelity, evidence and risk integrity (every proving command re-run by
+the axis itself), and unnecessary complexity **PASS**. Five records-precision
+adjacents across the axes corrected in place at `ff33869` — the commit the verdicts'
+own closing note describes (records-only, carrying exactly the axes' prescriptions).
+The code identity `d389b94` is untouched from T7.1 through HEAD.
 
 ## Branch and base
 
-- Branch: `wi-16-t6` (worktree `.claude/worktrees/wi-16-t6`), not yet pushed.
-- Base: `origin/main` at `96b28a8` (PR #28's merge commit; merge-base verified — the
-  local `main` ref is stale at PR #26 in this worktree and was not used).
+- Branch: `wi-16-t7` (worktree `.claude/worktrees/wi-16-t7`), not yet pushed.
+- Base: `origin/main` at `12a3dce` (PR #29's merge commit; fetched and merge-base
+  verified this session).
 
 ## Commit range
 
-`96b28a8..baa54fe` — 9 commits (plan; test 1; test 2; records; review fixes;
-review-fix records; review record; verification pass; stage-4 gate records), 8 files,
-+1128/−126, none under `src/`. The delivery.md commit follows `baa54fe` and rides the
-same PR.
+`12a3dce..ff33869` — 8 commits (plan; ponytail; T7.1 the two test edits; T7.2
+records; review-fix records; review record; verification pass; stage-4 gate records),
+7 files (`src/loop.test.ts` the only source file; `CLAUDE.md` a lesson extension),
++445/−150. The delivery.md commit follows `ff33869` and rides the same PR.
 
 ## Requested external actions
 
-Push of `wi-16-t6` to origin and a pull request to `main` — explicitly authorized by
-the owner 2026-09-29 ("yes", in answer to the stated question; the delivery record's
-`df2811f` commit captures the authorization state it was written under). No merge
-requested or to be performed — the harness's own repository always keeps human merge
-(hard constraint 1).
+None yet — this record is written before authorization. The intended actions, on the
+owner's explicit approval: push of `wi-16-t7` to origin and a pull request to `main`.
+No merge will be requested or performed — the harness's own repository always keeps
+human merge (hard constraint 1).
 
 ## Executed external actions and observed results
 
-- **Push** — `git push -u origin wi-16-t6` → `* [new branch] wi-16-t6 -> origin/wi-16-t6`,
-  upstream set, rc=0 (2026-09-29).
-- **Pull request** — `gh pr create --base main --head wi-16-t6` →
-  **https://github.com/manjula25/software-factory-loop/pull/29** (2026-09-29).
-- This delivery-update commit and its push ride the same PR.
+None.
 
 ## Pending actions
 
-- Human merge of PR #29 (by policy, not by this session).
-- T7 (TD6 prompt assertions) and T8 (docs honesty) — the remaining WI-16 tickets.
-- Worktree cleanup (incl. `wi-16-t4`, `wi-16-t5` from prior merges) — deliberately
-  not automatic.
+- Owner authorization for the push and PR (asked in this session; not yet given).
+- Human merge of the PR once opened (by policy, not by this session).
+- T8 (docs honesty) — the last WI-16 ticket after T7.
+- Worktree cleanup (incl. `wi-16-t4`, `wi-16-t5`, `wi-16-t6` from prior merges;
+  `wi-16-t7` after merge) — deliberately not automatic.
