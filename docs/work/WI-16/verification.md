@@ -614,3 +614,90 @@ the 8x duration gap is cache warmth, not a claim about either run.)
 | Does the preflight branch (`loop/preflight-gh-1`) leak into the clone on abort? | **Closed, no** — `git branch --list` empty for both patterns, asserted in both tests. |
 | Does a leftover `harness-failed` label interfere with a later scenario's eligibility? | **Closed, no** — labels are not an eligibility filter; test 2 ran green wearing test 1's label. |
 
+
+# T7 — TD6: the prompt assertions narrowed to the interface (2026-09-29)
+
+Code identity `d389b94` (worktree `wi-16-t7`, branch base `12a3dce`); the only changed
+source file is `src/loop.test.ts` — two edits, a retitle and one deletion. This records
+section is the same commit's sibling, not a later pass.
+
+## The claim, exactly
+
+The suite's assertions on `buildFixPrompt`'s output pin only interface tokens; the one
+ordinary-language prose regex is deleted; the count of tests is unchanged (287 before
+and after — an assertion was removed, never a test block); `npm run typecheck` rc=0;
+no production source is touched.
+
+## Proving commands, run fresh at `d389b94` (controller-captured)
+
+`npm test` → `Test Files 10 passed (10)`, `Tests 287 passed (287)`, rc=0;
+`npm run typecheck` → rc=0; `grep -n "toMatch(/commit only" src/loop.test.ts` → no
+matches (grep rc=1). All in `evidence/t7-unit-green.log`, rc on the line after each
+command. The pre-edit baseline (287/287, rc=0) was recorded by the implementer before
+the edit; the controller re-ran the post-edit suite itself.
+
+**Verification-before-completion re-ran the proving commands at the final state**
+(`d8519e1`, 2026-09-29 — after the records and review commits, which touch
+`docs/work/` only since `d389b94`): `npm test` → 10 files / 287 tests, rc=0;
+`npm run typecheck` → rc=0. The integration (`npm run test:integration`) and scenarios
+(`npm run test:scenarios`) suites are a stated non-claim for this ticket: nothing in
+their import graph changed in the range (`src/loop.test.ts` and `docs/work/` only), so
+T6's whole-suite captures (made at code identity `5e67a49`, applicable through the
+docs-only commits to `9d1bdc2`) remain applicable evidence for those surfaces.
+*(Precision fix 2026-09-29, stage-4 standards-axis adjacent 1: previously "captures at
+`9d1bdc2`," which overstated where the capture ran.)*
+
+## Claims → evidence
+
+| # | Claim | Proved by | Output |
+|---|---|---|---|
+| 1 | Criterion 1 — no assertion on the prompt matches prose with an ordinary-language regex, and every remaining assertion is classified | the source diff (`12a3dce..d389b94` — `src/loop.test.ts`, the only source file that range's three files touch) + the classification table below | exactly two hunks: the retitle and the line-350 deletion; zero `toMatch` remains in the describe (grep rc=1); every retained assertion is a `toContain` pin classified in the table |
+| 2 | Criterion 2 — every retained assertion names a harness-produced or harness-parsed token, classification stated in the records | the classification table below — living **here and only here** (ponytail rec 1, 2026-09-29: an in-code comment block would be a second copy that drifts) | all nine retained tokens classified; none requires a phrasing defense |
+| 3 | Criterion 3 — the removed assertion's behavior is enforced where it lives, or the gap is recorded | code facts + the finding below | the `.loop-harness/` half IS mechanically enforced — the nesting guard (`pathCommittedOnBranch`, `src/loop.ts:924`, `git ls-tree`) tested at `src/loop.test.ts:3213+`; the full diff-scope half ("only the fix and the reproduction test") is **instructed** (prompt step 4, `src/loop.ts:550`) and pre-merge-reviewed, but never mechanically enforced — recorded as a finding and added to the work item's follow-ups, not silently dropped |
+| 4 | Criterion 4 — `npm test` and `npm run typecheck` green | `evidence/t7-unit-green.log` | 10 files / 287 tests rc=0 (identical to the pre-edit count); typecheck rc=0 |
+
+### The classification table (the one home, per ponytail rec 1)
+
+FR-012's rule: legitimate exactly when the assertion pins a token the harness depends
+on at a seam of its own — produced by the harness and consumed by it, or produced by
+the agent under a contract the harness parses back. Illegitimate when it pins the
+phrasing of an instruction.
+
+| Retained assertion (`toContain`) | Classification — why it is interface |
+|---|---|
+| `ello-world` | the symptom carried from the issue body into the prompt — the prompt exists to carry it; the harness constructs the prompt from the issue |
+| `pip install -e ".[test]"` | the profile's `installCmd`, recorded at onboarding and executed verbatim by the harness's own sandboxes (preflight, verification, canary) |
+| `pytest -q` | the profile's `testCmd`/`singleTestCmd` — same seam: the harness parses that command's output with `SUITE_SUMMARY_RE` |
+| `reproTestPath(issue)` | a path the harness constructs (constraint 4's deterministic home) and later reads back: the verification sandbox runs it via `{test}` substitution |
+| `LOOP_IDENTITY.name` / `LOOP_IDENTITY.email` | the machine commit identity the harness itself defines and the fix commits must carry |
+| `<red-evidence>` / `<green-evidence>` | wrapper tags under a contract the harness parses back (`extractEvidence` throws without them) — the strongest interface there is |
+| `` `.loop-harness/` `` | the directory the harness owns (stages attachments into, `copyToWorktree`) — the token is the prompt-side counterpart of the nesting guard |
+
+Removed: `expect(prompt).toMatch(/commit only the fix and the reproduction test/i)` —
+an ordinary-language regex over a sentence the model is asked to read. Phrasing, not
+interface: the harness never parses this sentence back, and rewording the instruction
+(a behavior-preserving act) would have broken the test.
+
+*(Corrections 2026-09-29, code-quality review minors 2–3: criterion 3's row
+previously said the guard test lives at `src/loop.test.ts:3219+` — the test's `it(`
+line is 3213, proved by `sed -n '3213p' src/loop.test.ts` printing the
+"aborts loudly with zero spend when main has .loop-harness committed (nesting guard)"
+line; and the `.loop-harness/` table row previously ended on the fragment "the token
+the nesting guard's prompt-side counterpart", now completed.)*
+
+## Evidence boundary and non-claims
+
+- The retained assertions are **interface pins, not behavioral tests** — FR-012 says so
+  rather than pretending otherwise. A green describe block proves the prompt carries
+  the tokens, nothing about agent behavior.
+- The diff-scope gap (criterion 3's finding) is **not closed** by this ticket: no
+  changed-files allowlist exists anywhere in the harness. A changed-files-allowlist
+  test would be new harness behavior specification, not TD6's narrowing — out of scope
+  here, recorded in the follow-ups.
+- The pre-merge review pass and the fresh-sandbox verification gate prove the fix
+  works; neither proves the branch carries nothing else. That is the finding.
+- Other prose-ish `toMatch` regexes elsewhere in `src/loop.test.ts` (e.g. lines ~378,
+  ~387, ~621, ~2230, ~2989 — stale-profile, unreadable-output, REVERTED, and summary
+  banners) are outside this ticket: FR-012 scopes to assertions **on the prompt sent to
+  the fix agent**, and those assert harness-generated failure/summary strings. Flagged
+  by the implementer; adjacent, not blocking.

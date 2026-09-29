@@ -512,6 +512,57 @@ HEAD" (eight at HEAD, the eighth being `review.md`), the 435s duration attributi
 slot), and review.md's "HEAD" wording. T6 is review-clean end to end; delivery
 awaits the owner's explicit authorization (`finishing-a-development-branch`).
 
+## 17. T7 — FR-012, the prompt assertions narrowed to the interface — 2026-09-29
+
+Test-only ticket on branch `wi-16-t7` (base `12a3dce`, PR #29's merge). The leaf
+implementer made exactly two edits to `src/loop.test.ts` — the retitle of test 2 to
+"with staged attachments, still carries the `.loop-harness/` token the nesting guard
+owns" and the deletion of the line-350 prose regex
+`/commit only the fix and the reproduction test/i` — and the controller verified the
+diff itself (two hunks, nothing else, `src/loop.ts` untouched) and re-ran the proving
+commands itself: 10 files / 287 tests rc=0, identical to the pre-edit count (an
+assertion removed, never a test block), typecheck rc=0, grep for the prose regex
+rc=1. Evidence `evidence/t7-unit-green.log`; code identity `d389b94`. Ponytail rec 1
+(2026-09-29, commit `9a591b1`) shrank the plan: no in-code classification comment —
+the classification table lives once, in the T7 verification section. Criterion 3's
+honest arm: the diff-scope half of the removed assertion's behavior is instructed and
+pre-merge-reviewed but never mechanically enforced — recorded as the finding below,
+not fixed (that would be new `src/` behavior). The implementer flagged other
+prose-ish `toMatch` regexes elsewhere in the suite (harness-generated failure and
+summary strings, not prompt assertions — out of FR-012's scope); adjacent observation,
+verified at lines 378/387/621/2230/2989 before recording.
+
+Review round (same day): specification review **PASS** and code-quality review
+**APPROVED** at `4a2d97f`, both with zero blocking findings; the code-quality pass
+returned three minors, two of them records defects in the verification section —
+the nesting-guard anchor `3219+` (really `3213`, re-proved by
+`sed -n '3213p' src/loop.test.ts`) and a truncated fragment in the classification
+table's `.loop-harness/` row — corrected in place in the same commit as this note,
+which changed the records identity and triggered the lifecycle's review rerun on the
+new candidate. The third minor (test 2's "with staged attachments" title describing
+setup rather than a causally necessary condition — the token comes from prompt step 4
+unconditionally) is recorded here as accepted-as-is; the fixture stays as the only
+exercise of `buildFixPrompt`'s attachments branch.
+
+## 18. T7 stage-4 gate — four-axis code-review PASS at 2782f17 — 2026-09-29
+
+The post-verification gate ran four concurrent read-only axis reviewers over
+`12a3dce..2782f17`. The standards axis returned FAIL on one blocker — the plan said
+"seven interface tokens" beside its own list of **eight** (the numeral-beside-its-list
+lesson, now a fourth recorded recurrence, added to the CLAUDE.md lesson entry) — fixed
+in place with the counting proof, plus its two adjacents (where T6's whole-suite
+capture actually ran; review.md's "one-to-one"), and the axis re-reviewed the working
+tree and returned **PASS**. Specification fidelity and unnecessary complexity returned
+**PASS** with no blocking findings (spec's two adjacents — the planner-prompt sentence
+pin at `src/queue.test.ts:638` and prompt pins outside the reviewed describe — recorded
+in review.md as future TD6-style candidates, out of FR-012's scope). Evidence and risk
+integrity returned **PASS** after re-running every proving command itself, with three
+records-precision adjacents fixed in the same commit as the gate section (verification
+row 1's loose parenthetical, the evidence log's 326–352 range, review.md's "HEAD"
+wording). All corrections are the axes' own prescriptions; the code identity `d389b94`
+is untouched throughout. T7 is gate-clean end to end; delivery awaits the owner's
+explicit authorization (`finishing-a-development-branch`).
+
 ## Follow-ups this work item leaves open
 
 - `.claude/worktrees/` is untracked and present in the working tree. Not WI-16's,
@@ -529,3 +580,11 @@ awaits the owner's explicit authorization (`finishing-a-development-branch`).
   harness's exec calls carry no timeouts). Five later runs were clean; if it
   recurs, the fix belongs in `src/` as its own reported decision, per the
   ticket's boundary.
+
+- **T7 (FR-012) finding, 2026-09-29:** the fix branch's diff scope — "commit only the
+  fix and the reproduction test" — is **instructed** (prompt step 4, `src/loop.ts:550`)
+  and judged by the pre-merge review pass, but never **mechanically enforced**: no
+  changed-files allowlist exists anywhere in the harness. The `.loop-harness/` half IS
+  enforced (the nesting guard, `pathCommittedOnBranch` at `src/loop.ts:924`). Closing
+  the full-scope half would be new `src/` behavior — a candidate for a future work
+  item, owned by whoever picks it up.
