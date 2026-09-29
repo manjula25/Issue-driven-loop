@@ -521,7 +521,15 @@ silence is rejected, never read as "no new failures". Both runs escalate on the
 with the outcome class and byte-identical reason, with no `@` line anywhere (the
 profile has no notifyHandle; FR-009). No file under `src/` changed.
 
-## Proving commands, run fresh at the records state (code identity `1e60411`)
+## Proving commands, run fresh at the records state (code identity `5e67a49`)
+
+*(Verification-before-completion pass, 2026-09-29 at `dec6989` — records and review
+commits only: typecheck rc=0 and unit 10 files / 287 tests rc=0 re-executed at that
+exact state; the whole-suite green below was captured at `5e67a49`, and
+`git diff --name-only 5e67a49..dec6989` lists only `docs/work/` paths — every input
+the scenarios suite reads (`tests/`, `src/`, `scripts/`, configs, fixtures) is
+bit-identical, so the capture applies to the exact tree a re-run would read today;
+unaffected evidence is not invalidated evidence.)*
 
 ```
 $ npm run typecheck
