@@ -282,6 +282,17 @@ export interface LoopOutcome {
    */
   readonly attempts?: number;
   /**
+   * WI-18 (D2, T2 quality fix 2026-09-30): the lane's fix-pass COUNT for spend
+   * accounting — `attempt` from the fix loop, explicitly `0` on the pre-fix
+   * abort arms (confidentiality refusal, nesting guard, stale-baseline
+   * preflight) where NO fix pass ran. Without it, `attempts ?? 1` bills a
+   * phantom pass on those arms — a report saying "Aborted before the fix run"
+   * while claiming one model pass spent. Distinct from `attempts` (a WI-17
+   * rendering figure, set only when > 1); absent only on pre-WI-18 hand-built
+   * literals, which the spend counters fall back to `attempts ?? 1` for.
+   */
+  readonly fixPasses?: number;
+  /**
    * WI-18 (D2): the lane's fix-attempt token usage, summed across every
    * attempt that reported any — absent when NO attempt did (the honest
    * absence signal, D4: a provider that reports no usage is stated, never
@@ -970,7 +981,9 @@ async function runSingleIssueLane(
     if (!(error instanceof ConfidentialityGateError)) {
       throw error;
     }
-    return { branch, failure: error.message };
+    // WI-18 (D2, T2 quality fix): zero fix passes — the refusal precedes the
+    // fix loop, so the spend counters must not default to one.
+    return { branch, failure: error.message, fixPasses: 0 };
   }
   // Nesting guard: fix worktrees fork from main, so a committed
   // `.loop-harness` there pre-creates the copyToWorktree destination and
@@ -991,6 +1004,9 @@ async function runSingleIssueLane(
         "(.loop-harness/.loop-harness) and the promised attachment path would not exist. Remove it from " +
         "the target repo (git rm -r --cached .loop-harness, commit, push) and re-run.",
       failureKind: "harness",
+      // WI-18 (D2, T2 quality fix): zero fix passes — the guard precedes the
+      // fix loop ("no agent spend", above).
+      fixPasses: 0,
     };
   }
 
@@ -1074,6 +1090,9 @@ async function runSingleIssueLane(
       branch,
       failure,
       failureKind: "harness",
+      // WI-18 (D2, T2 quality fix): zero fix passes — the preflight runs
+      // before the fix agent ("no API spend on a stale profile", above).
+      fixPasses: 0,
       ...(preflightTeardown !== undefined ? { teardownFailure: preflightTeardown } : {}),
       ...escalation,
     };
@@ -1115,6 +1134,9 @@ async function runSingleIssueLane(
       // WI-17 (D5): the spend-ledger figure — only when more than one attempt
       // was spent, so single-attempt outcomes stay byte-identical.
       ...(attempt > 1 ? { attempts: attempt } : {}),
+      // WI-18 (D2, T2 quality fix): the explicit fix-pass count — spend
+      // accounting never infers it from `attempts` on real outcomes.
+      fixPasses: attempt,
       ...(usage !== undefined ? { usage } : {}),
       ...escalation,
     };
@@ -1155,6 +1177,8 @@ async function runSingleIssueLane(
           ...(attachmentFailures.length > 0 ? { attachmentFailures: [...attachmentFailures] } : {}),
           ...(haltedTeardown !== undefined ? { teardownFailure: haltedTeardown } : {}),
           ...(attempt - 1 > 1 ? { attempts: attempt - 1 } : {}),
+          // WI-18 (D2, T2 quality fix): only the attempts already SPENT count.
+          fixPasses: attempt - 1,
           ...(usage !== undefined ? { usage } : {}),
         };
       }
@@ -1254,14 +1278,19 @@ async function runSingleIssueLane(
   // EARLY origin (it runs pre-merge), so its teardown failure folds into the
   // PR'd outcome below — first origin still wins (preflight, then the primary
   // verification sandbox), exactly the established precedence.
+  // WI-18 (D2): the fix passes' token sum, computed once beside the sibling
+  // arms' `const usage = issueUsage()` idiom (T2 quality nit).
+  const prUsage = issueUsage();
   let prOutcome: LoopOutcome = {
     branch,
     prUrl,
     // WI-17 (D5): the spend-ledger figure, only when the lane retried.
     ...(attempt > 1 ? { attempts: attempt } : {}),
-    // WI-18 (D2): the fix passes' token sum — present whenever reported, also
-    // on single-attempt runs (the count and the tokens are independent).
-    ...(issueUsage() !== undefined ? { usage: issueUsage() } : {}),
+    // WI-18 (D2, T2 quality fix): the explicit fix-pass count, and the fix
+    // passes' token sum — present whenever reported, also on single-attempt
+    // runs (the count and the tokens are independent).
+    fixPasses: attempt,
+    ...(prUsage !== undefined ? { usage: prUsage } : {}),
     ...(attachmentFailures.length > 0 ? { attachmentFailures: [...attachmentFailures] } : {}),
     ...(earlyTeardown !== undefined ? { teardownFailure: earlyTeardown } : {}),
   };
@@ -1587,7 +1616,7 @@ async function runVerifiedMergerGate(
   // before the await so a throwing run still counts; `mergerUsage` rides the
   // return of every downstream arm (re-verification failure, push failure,
   // success), never short-circuiting the FR-008 re-verification flow.
-  let mergerPassRan = true;
+  const mergerPassRan = true;
   let mergerUsage: PassUsage | undefined;
   try {
     const mergerPrompt = buildMergerPrompt(input.issue, input.profile, branch, mainRef);
@@ -1809,8 +1838,9 @@ async function runCanary(
       // WI-17 (D5): the spend-ledger figure rides the fresh object too — the
       // uncanaried verdict stands untouched beside it.
       ...(prOutcome.attempts !== undefined ? { attempts: prOutcome.attempts } : {}),
-      // WI-18 (D2): the same for the spend facts — fix-attempt tokens plus the
-      // shared passes (review/merger) this lane already ran.
+      // WI-18 (D2): the same for the spend facts — fix-pass count, fix-attempt
+      // tokens, and the shared passes (review/merger) this lane already ran.
+      ...(prOutcome.fixPasses !== undefined ? { fixPasses: prOutcome.fixPasses } : {}),
       ...(prOutcome.usage !== undefined ? { usage: prOutcome.usage } : {}),
       ...(prOutcome.sharedUsage !== undefined ? { sharedUsage: prOutcome.sharedUsage } : {}),
       ...(prOutcome.sharedPasses !== undefined ? { sharedPasses: prOutcome.sharedPasses } : {}),
@@ -1967,8 +1997,9 @@ async function runCanary(
     // WI-17 (D5): the spend-ledger figure rides the fresh object too — the
     // reverted verdict stands untouched beside it.
     ...(prOutcome.attempts !== undefined ? { attempts: prOutcome.attempts } : {}),
-    // WI-18 (D2): the same for the spend facts — fix-attempt tokens plus the
-    // shared passes (review/merger) this lane already ran.
+    // WI-18 (D2): the same for the spend facts — fix-pass count, fix-attempt
+    // tokens, and the shared passes (review/merger) this lane already ran.
+    ...(prOutcome.fixPasses !== undefined ? { fixPasses: prOutcome.fixPasses } : {}),
     ...(prOutcome.usage !== undefined ? { usage: prOutcome.usage } : {}),
     ...(prOutcome.sharedUsage !== undefined ? { sharedUsage: prOutcome.sharedUsage } : {}),
     ...(prOutcome.sharedPasses !== undefined ? { sharedPasses: prOutcome.sharedPasses } : {}),
@@ -2123,11 +2154,13 @@ export interface QueueSummary {
 
 /**
  * WI-18 (D2): the run-level spend ledger. `modelPasses` counts every model
- * pass the run ATTEMPTED — fix attempts (per-lane `attempts ?? 1`), shared
- * passes (pre-merge review, merger), and planner passes (initial + re-plans)
- * — including passes whose run threw. `total`/`perIssue`/`shared` carry the
- * token figures providers actually reported; all stay absent when none did
- * (`usageAvailable: false`, the D4 absence signal).
+ * pass the run ATTEMPTED — fix passes (per-lane `fixPasses`, falling back to
+ * `attempts ?? 1` only for pre-WI-18 hand-built literals), shared passes
+ * (pre-merge review, merger), and planner passes (initial + re-plans) —
+ * including passes whose run threw, and never a pass that never started (a
+ * pre-fix abort lane carries `fixPasses: 0`). `total`/`perIssue`/`shared`
+ * carry the token figures providers actually reported; all stay absent when
+ * none did (`usageAvailable: false`, the D4 absence signal).
  */
 export interface RunSpend {
   readonly modelPasses: number;
@@ -2487,8 +2520,11 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
       // passes and per-issue tokens from the lane's own attempts, shared
       // passes (review/merger) merged by name across lanes. Reverted and
       // uncanaried lanes carry the same fields (their fresh objects copy them),
-      // so their spend is not silently dropped.
-      fixPassTotal += outcome.attempts ?? 1;
+      // so their spend is not silently dropped. T2 quality fix: `fixPasses`
+      // first — a pre-fix abort lane carries an explicit 0, where the old
+      // `attempts ?? 1` default billed a phantom pass (the fallbacks remain
+      // only for pre-WI-18 hand-built literals).
+      fixPassTotal += outcome.fixPasses ?? outcome.attempts ?? 1;
       if (outcome.usage !== undefined) {
         perIssueUsage.push([issue.id, outcome.usage]);
         fixUsageTotal =
@@ -2930,13 +2966,15 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
     }
     // WI-18 (D2/D3, T2): the single-issue spend sentence — ALWAYS rendered,
     // even on a one-attempt no-usage run (the honest D4 absence arm). The
-    // figure counts this issue's fix attempts only; shared passes (review,
-    // merger) and the planner belong to the run-level ledger in
-    // `formatSummary`. The PR body stays spend-silent (D5).
+    // figure counts this issue's fix attempts only (`fixPasses` first — a
+    // pre-fix abort lane carries an explicit 0, where `attempts ?? 1` billed a
+    // phantom pass); shared passes (review, merger) and the planner belong to
+    // the run-level ledger in `formatSummary`. The PR body stays spend-silent
+    // (D5).
     stdout.push(
       result.outcome.usage !== undefined
-        ? `spend: ${result.outcome.attempts ?? 1} model passes, tokens: ${formatTokens(result.outcome.usage)}`
-        : `spend: ${result.outcome.attempts ?? 1} model passes, token usage not available for this provider`,
+        ? `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, tokens: ${formatTokens(result.outcome.usage)}`
+        : `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, token usage not available for this provider`,
     );
     // WI-6 (FR-008): a failed close is bookkeeping noise on a merged outcome
     // — loud (guarded, stderr), never fatal.
@@ -2975,12 +3013,13 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
   }
   // WI-18 (D2/D3, T2): same ALWAYS-rendered spend sentence on the failure arm
   // (D4's absence arm is the scripted-agent/queue-harness default: no provider
-  // reported tokens). Fix attempts only — shared passes and the planner are
-  // the run summary's figures.
+  // reported tokens). Fix attempts only, `fixPasses` first (pre-fix aborts
+  // carry an explicit 0) — shared passes and the planner are the run summary's
+  // figures.
   stderr.push(
     result.outcome.usage !== undefined
-      ? `spend: ${result.outcome.attempts ?? 1} model passes, tokens: ${formatTokens(result.outcome.usage)}`
-      : `spend: ${result.outcome.attempts ?? 1} model passes, token usage not available for this provider`,
+      ? `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, tokens: ${formatTokens(result.outcome.usage)}`
+      : `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, token usage not available for this provider`,
   );
   // WI-8 (FR-002): the teardown line rides after the failure line — recorded,
   // never deciding the outcome that was already earned.

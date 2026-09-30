@@ -525,13 +525,16 @@ describe("runSingleIssue auto-merge (WI-6 T3, FR-003/FR-004 wiring)", () => {
     expect(body.body).not.toContain("A human reviews and merges this");
   });
 
-  it("opted-out (no autoMerge in profile): mergePr NEVER called; outcome shape identical to today's", async () => {
+  it("opted-out (no autoMerge in profile): mergePr NEVER called; outcome shape identical to today's (plus the WI-18 fixPasses spend field)", async () => {
     const deps = makeDeps();
     const outcome = await run(deps, profile);
     expect(deps.mergePr).not.toHaveBeenCalled();
     expect(outcome).toEqual({
       branch: "fix/gh-1",
       prUrl: "https://github.com/manjula25/loop-fixtures-py/pull/9",
+      // WI-18 (D2, T2 quality fix): the explicit fix-pass count rides every
+      // fix-loop outcome — spend accounting no longer infers it.
+      fixPasses: 1,
     });
     // and the body keeps today's human-review closing (pinned in buildPrBody tests)
     const body = deps.createPr.mock.calls[0]![0] as { body: string };
@@ -4341,6 +4344,58 @@ describe("spend ledger (WI-18 T2, D2/D4)", () => {
     expect(text).toContain(
       "spend: 3 model passes, tokens: 140 in / 27 out / 7 cache-write / 13 cache-read",
     );
+  });
+
+  it("(h) a pre-fix abort bills ZERO fix passes (T2 quality fix): the report never claims spend for a pass that never started", async () => {
+    // Single issue: the stale-baseline preflight aborts before the fix loop.
+    const deps = makeDeps({ staleBaseline: true });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      deps,
+    );
+    expect(deps.runFixRun).not.toHaveBeenCalled();
+    expect(outcome.failure).toContain("Aborted before the fix run");
+    const report = formatSingleIssueResult({ kind: "run", outcome });
+    expect(report.stderr.join("\n")).toContain(
+      "spend: 0 model passes, token usage not available for this provider",
+    );
+    expect(report.stderr.join("\n")).not.toContain("spend: 1 model passes");
+
+    // Queue mode: the aborting snapshot's run ledger carries the same zero —
+    // no planner pass either (one issue never triggers the planner).
+    const queue = makeQueueDeps({ issues: [queueIssue(1)], staleBaseline: true });
+    const error = await runQueue(queueRunInput({}), queue.deps).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(QueueAbortedError);
+    expect((error as QueueAbortedError).summary.spend?.modelPasses).toBe(0);
+  });
+
+  it("(i) shared passes COUNT even when the provider reports no usage, and a thrown merger run still counts its pass (T2 quality MINOR)", async () => {
+    // No usage knobs at all — the D4 absence arm. The passes still count:
+    // 1 fix + 1 review + 1 merger = 3.
+    const { deps } = makeQueueDeps({ issues: [queueIssue(1)], conflictFor: "gh-1" });
+    const summary = await runQueue(queueRunInput({ profile: { ...profile, autoMerge: true } }), deps);
+    expect(summary.spend?.modelPasses).toBe(3);
+    expect(summary.spend?.usageAvailable).toBe(false);
+    expect(formatSummary(summary)).toContain(
+      "spend: 3 model passes, token usage not available for this provider",
+    );
+
+    // A merger run that THROWS after `mergerPassRan` latched still counts:
+    // the gate fails open-PR (no review runs after it), so 1 fix + 1 merger.
+    const throwing = makeQueueDeps({
+      issues: [queueIssue(1)],
+      conflictFor: "gh-1",
+      mergerThrows: "sandcastle: merger run failed — budget exceeded",
+    });
+    const thrownSummary = await runQueue(
+      queueRunInput({ profile: { ...profile, autoMerge: true } }),
+      throwing.deps,
+    );
+    expect(thrownSummary.spend?.modelPasses).toBe(2);
+    expect(thrownSummary.spend?.usageAvailable).toBe(false);
   });
 });
 
