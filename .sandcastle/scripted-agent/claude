@@ -5,6 +5,18 @@ test image. Answers the harness's real prompt/stream contract without a model:
 - fix pass   (prompt opens "You are fixing one reported issue"): writes the
               reproduction test, applies the known patch, runs the suite,
               commits under LOOP_IDENTITY, emits <red/green-evidence>.
+              WI-17 retry arm: when the prompt carries the harness's attempt
+              feedback marker ("... — previous verification failed:", the
+              substring buildAttemptFeedback appends), the agent applies the
+              CORRECT patch. The WRONG first patch — a real committed code
+              change that genuinely fails the reproduction test, so the retry
+              is earned, not theatrical — fires ONLY when the repo tree
+              carries the marker file .scripted-agent-retry-seed (seeded on
+              main by scenario 4; the scenarios' fixture reset removes that
+              marker BY NAME and asserts its absence, so a killed scenario-4
+              run cannot arm the wrong patch for any other scenario's fix
+              runs). State lives in the prompt and the tree (WI-17 D2),
+              never in session state.
 - review pass(prompt opens "You are reviewing a proposed bug-fix diff"):
               emits <review>approve</review>.
 Anything else exits 1 — an unrecognised prompt is a harness change to see, not
@@ -17,10 +29,25 @@ import sys
 
 FIX_MARKER = "You are fixing one reported issue"
 REVIEW_MARKER = "You are reviewing a proposed bug-fix diff"
+# WI-17: the tail of buildAttemptFeedback's header ("attempt N of M — previous
+# verification failed:") — keyed on the invariant part so any attempt >= 2
+# takes the retry arm, not just "2 of 2".
+RETRY_MARKER = "— previous verification failed:"
+# WI-17: the tree marker scenario 4 seeds on main (removed by name — and its
+# absence asserted — by the scenarios' fixture reset). The prompt alone cannot
+# distinguish "attempt 1 of 1" from "attempt 1 of 2" (the feedback marker
+# exists only from attempt 2 on), so the wrong-first-patch behavior is keyed
+# on this file's presence instead — without it the agent lands the correct
+# patch on every attempt, which is what every non-retry scenario needs.
+SEED_MARKER_PATH = ".scripted-agent-retry-seed"
 REPRO_PATH = "tests/fixed-issues/test_gh_1.py"
 PATCH_PATH = "src/loopsample/textops.py"
 DEFECT = "return text[:limit] + ELLIPSIS"
 PATCHED = "return text[:limit - 1] + ELLIPSIS"
+# The wrong first patch: an off-by-one the OTHER way. A real code change, but
+# truncate("abcdefghij", 5) yields "abc…", not the asserted "abcd…" — the
+# reproduction test genuinely fails against it.
+WRONG_PATCH = "return text[:limit - 2] + ELLIPSIS"
 USER_NAME = "software-factory-loop"
 USER_EMAIL = "manjula25+loop@users.noreply.github.com"
 SESSION_ID = "scripted-agent"
@@ -63,7 +90,7 @@ def run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def fix_pass():
+def fix_pass(retry):
     install = run(["pip", "install", "-q", "-e", ".[test]"])
     if install.returncode != 0:
         sys.stderr.write(install.stderr)
@@ -80,11 +107,17 @@ def fix_pass():
     if DEFECT not in source:
         sys.stderr.write(f"known defect not found in {PATCH_PATH}\n")
         sys.exit(1)
+    # WI-17: the wrong patch fires only on a seeded tree's FIRST attempt (no
+    # feedback marker in the prompt yet) — honestly wrong, caught by the
+    # fresh-sandbox gate, never by the agent's own signal. Every other path,
+    # including every attempt of an unseeded run, lands the correct patch.
+    wrong = (not retry) and os.path.exists(SEED_MARKER_PATH)
+    replacement = WRONG_PATCH if wrong else PATCHED
     with open(PATCH_PATH, "w", encoding="utf-8") as fh:
-        fh.write(source.replace(DEFECT, PATCHED))
+        fh.write(source.replace(DEFECT, replacement))
     green = run(["pytest", "-q", REPRO_PATH])
     suite = run(["pytest", "-q"])
-    if green.returncode != 0 or suite.returncode != 0:
+    if not wrong and (green.returncode != 0 or suite.returncode != 0):
         sys.stderr.write((green.stderr or "") + (suite.stderr or ""))
         sys.exit(1)
     for key, value in (("user.name", USER_NAME), ("user.email", USER_EMAIL)):
@@ -94,10 +127,34 @@ def fix_pass():
     if commit.returncode != 0:
         sys.stderr.write(commit.stderr)
         sys.exit(1)
+    if retry:
+        headline = (
+            "Retry arm: the prompt carried the attempt-feedback marker "
+            + RETRY_MARKER
+            + " — applying the corrected patch.\n"
+            "Reproduction test written at "
+            + REPRO_PATH
+            + ", defect patched, suite green, committed under the loop identity.\n"
+        )
+    elif wrong:
+        # No self-gate on the wrong attempt: the agent is confidently wrong,
+        # commits, and reports what it saw — the green-evidence block carries
+        # the actual (failing) post-patch run verbatim. Nothing on the
+        # red-verdict path consumes it; the independent gate decides.
+        headline = (
+            "First attempt: no feedback marker in the prompt.\n"
+            "Reproduction test written at "
+            + REPRO_PATH
+            + ", defect patched, committed under the loop identity.\n"
+        )
+    else:
+        headline = (
+            "Reproduction test written at "
+            + REPRO_PATH
+            + ", defect patched, suite green, committed under the loop identity.\n"
+        )
     report = (
-        "Reproduction test written at "
-        + REPRO_PATH
-        + ", defect patched, suite green, committed under the loop identity.\n"
+        headline
         + "<red-evidence>\n"
         + red.stdout.strip()
         + "\n</red-evidence>\n"
@@ -131,7 +188,7 @@ def review_pass():
 def main():
     prompt = sys.stdin.read()
     if FIX_MARKER in prompt:
-        fix_pass()
+        fix_pass(RETRY_MARKER in prompt)
     elif REVIEW_MARKER in prompt:
         review_pass()
     else:

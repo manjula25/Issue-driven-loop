@@ -56,14 +56,28 @@ Scenario 3: a staleness run against the shared fixture — the test seeds a base
 recorded profile does not know (a pushed failing test) or a `testCmd` that exits zero
 while executing nothing, and asserts the queue aborts BEFORE the fix agent (no PR, no
 branch, an untouched origin/main tip), with the WI-14 escalation side effects asserted
-as positive evidence (the `harness-failed` label, the `preflight-failed` comment). This
+as positive evidence (the `harness-failed` label, the `preflight-failed` comment). And from
+WI-17 T3, Scenario 4: the bounded fix-attempt retry proven fixable-green end to end — a
+`--max-attempts 2` run against the shared fixture whose scripted agent lands a genuinely wrong
+patch on attempt 1 (a real committed code change that fails the reproduction test, caught by
+the independent fresh-sandbox gate) and the correct one only on the retry, keyed on the
+feedback marker the harness appends to the second prompt; the test asserts the merged +
+canary-green outcome, the closed issue, the `gh-1: attempts: 2` spend-ledger line, and the
+retry's positive evidence — the attempt-1 wrong-patch commit found dangling in the clone after
+the red verdict's branch delete, materialised and re-run red in the sandbox, plus both attempt
+dispatch lines in sandcastle's append-mode run log (the wrong-first-attempt arm is keyed on a
+marker file the test seeds on main and the fixture reset removes by name and asserts absent, so
+single-attempt scenarios keep the correct patch — the
+prompt alone cannot tell attempt 1 of 1 from attempt 1 of 2). The exhaustion/escalate-once
+semantics
+stay pinned at unit level (WI-17 T2, ponytail rec 4). This
 scenario surface is not the default gate, and nothing runs it automatically — there is no CI
 and no hook, so the trigger is the verification stage's own requirement that a claim about the
 wiring carry fresh evidence for the exact candidate (FR-011's non-claims); adversarial finding
-A-2 ("the CLI entry is executed by no test") is thereby narrowed, not closed — scenarios 1 and
-3 execute the real CLI entry, so the entry's subprocess wiring is covered for the branches they
-drive, while the planner, the merger, the canary-red net, and the multi-lane wave runner remain
-unexercised.
+A-2 ("the CLI entry is executed by no test") is thereby narrowed, not closed — scenarios 1, 3,
+and 4 execute the real CLI entry, so the entry's subprocess wiring is covered for the branches
+they drive, while the planner, the merger, the canary-red net, and the multi-lane wave runner
+remain unexercised.
 
 There is still **no lint step** — do not invent one. The authoritative command list lives in
 `docs/agents/workflow.md` (Repository commands); read it rather than guessing, and when a

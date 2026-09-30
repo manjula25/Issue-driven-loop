@@ -18,6 +18,17 @@ export const SEED_COMMIT = "a4348dafa4aa328b908692ed46a1d4ddf9796fd7";
  * labels, so an empty queue needs a label that exists but matches nothing. */
 export const EMPTY_QUEUE_LABEL = "scenarios-empty-queue";
 
+/**
+ * WI-17 T3: scenario 4's seed marker — the tree key the scripted agent's
+ * wrong-first-attempt arm requires (`.scripted-agent-retry-seed`, seeded on
+ * main by the scenario after the reset). The reset removes it BY NAME (step
+ * 3b) and verifies its absence (step 8), so a scenario-4 run killed after its
+ * seed was pushed can never poison a later scenario's single-attempt fix runs
+ * through a tracked leftover. The prompt alone cannot tell "attempt 1 of 1"
+ * from "attempt 1 of 2", which is why the key is the tree at all.
+ */
+export const SCENARIO4_SEED_MARKER = ".scripted-agent-retry-seed";
+
 /** The guard's lock directory, shared by every process running scenarios. */
 export const GUARD_DIR = join(tmpdir(), "loop-integration-fixture.guard");
 
@@ -232,6 +243,30 @@ export function resetFixture(): void {
   });
   run("discard untracked debris", "git", ["clean", "-fdq"], undefined, { cwd: FIXTURE_CLONE_DIR });
 
+  // 3b. (WI-17 T3) Remove scenario 4's seed marker BY NAME when present —
+  //     BEFORE the tree convergence below, so this genuinely fires whenever a
+  //     scenario-4 run was killed after pushing its seed (the cross-scenario
+  //     contract: later scenarios' fix runs must never see the wrong-first
+  //     attempt key; the convergence would also drop it as a tracked extra,
+  //     but the removal is deliberate and named, and step 8 asserts the
+  //     absence so a leak fails the reset loudly instead of poisoning).
+  if (
+    spawnSync("git", ["cat-file", "-e", `main:${SCENARIO4_SEED_MARKER}`], {
+      cwd: FIXTURE_CLONE_DIR,
+      encoding: "utf8",
+    }).status === 0
+  ) {
+    run("remove scenario-4 seed marker", "git", ["rm", "-q", SCENARIO4_SEED_MARKER], undefined, {
+      cwd: FIXTURE_CLONE_DIR,
+    });
+    run("commit marker removal", "git", [
+      ...LOOP_IDENTITY,
+      "commit",
+      "-m",
+      "scenarios: remove scenario-4 seed marker",
+    ], undefined, { cwd: FIXTURE_CLONE_DIR });
+  }
+
   // 4. Converge the TREE to the seed — one added commit, no history rewrite.
   //    `git diff --name-only` listing nothing means the trees already match.
   //    Order matters: convergence BEFORE the revert markers below, or the
@@ -378,6 +413,20 @@ export function resetFixture(): void {
   ]);
   if (JSON.parse(stillClosed || "[]").length !== 0) {
     throw new FixtureResetError("verify issues reopened", `closed issues remain: ${stillClosed}`);
+  }
+  // WI-17 T3: the scenario-4 seed marker must not survive the reset (step
+  // 3b's contract) — its presence on origin/main would arm the scripted
+  // agent's wrong-first-attempt patch for every later fix run.
+  if (
+    spawnSync("git", ["cat-file", "-e", `origin/main:${SCENARIO4_SEED_MARKER}`], {
+      cwd: FIXTURE_CLONE_DIR,
+      encoding: "utf8",
+    }).status === 0
+  ) {
+    throw new FixtureResetError(
+      "verify seed marker absent",
+      `${SCENARIO4_SEED_MARKER} is still on origin/main after the reset`,
+    );
   }
   const status = run("verify working tree", "git", ["status", "--porcelain"], undefined, {
     cwd: FIXTURE_CLONE_DIR,
