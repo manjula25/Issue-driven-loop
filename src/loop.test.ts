@@ -35,6 +35,7 @@ import {
   type AgentSpec,
   type FixRunOutcome,
   type FixSandboxHandle,
+  type PassUsage,
 } from "./sandcastle-adapter.js";
 import type { NormalizedIssue } from "./issues.js";
 
@@ -129,6 +130,11 @@ function trackedCanary(suiteOutput: string, installExit = 0): {
 
 interface DepOverrides {
   fixOutcome?: FixRunOutcome;
+  /**
+   * WI-18 T2: token usage every runFixRun call reports — absent (the default)
+   * models a provider that reports none, the honest-absence path (D4).
+   */
+  fixUsage?: PassUsage;
   /** Verification (second) sandbox; the preflight sandbox defaults to a matching baseline. */
   sandbox?: FixSandboxHandle;
   /**
@@ -206,7 +212,10 @@ function makeDeps(overrides: DepOverrides = {}) {
   let mergerRan = false;
   return {
     env,
-    runFixRun: vi.fn(async (_input: { branch: string; prompt: string }) => overrides.fixOutcome ?? fixOutcome()),
+    runFixRun: vi.fn(async (_input: { branch: string; prompt: string }) => ({
+      ...(overrides.fixOutcome ?? fixOutcome()),
+      ...(overrides.fixUsage !== undefined ? { usage: overrides.fixUsage } : {}),
+    })),
     createFixSandbox: vi.fn(async (input: { branch: string }) => {
       // The canary sandbox is distinguished by its branch (loop/canary-<id>),
       // not by call order — the preflight (loop/preflight-<id>) also forks
@@ -1676,6 +1685,16 @@ interface QueueDepsConfig {
   /** Id whose verification sandbox fails the reproduction test (issue-level failure). */
   failReproFor?: string;
   /**
+   * WI-18 T2: token usage every agent pass reports — fix attempts, planner
+   * calls, the review pass, the merger pass. Absent (the default) models a
+   * provider that reports none (the scripted scenario agent, non-Claude
+   * providers) — the honest-absence path (D4).
+   */
+  fixUsage?: PassUsage;
+  planUsage?: PassUsage;
+  reviewUsage?: PassUsage;
+  mergerUsage?: PassUsage;
+  /**
    * WI-17 T2: the id whose FIRST verification sandbox is red (repro fails) and
    * whose later ones go green — the red-then-green knob the retry tests need;
    * `failReproFor` stays the always-red knob.
@@ -1781,7 +1800,12 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       // T6b (quality Minor 4): no `active` write here — every read of the
       // shared `active` sits inside createFixSandbox, which overwrites it at
       // entry before reading, so a mid-lane write was vestigial.
-      return { stdout: agentStdout(), commits: [{ sha: "abc" }], branch: input.branch };
+      return {
+        stdout: agentStdout(),
+        commits: [{ sha: "abc" }],
+        branch: input.branch,
+        ...(config.fixUsage !== undefined ? { usage: config.fixUsage } : {}),
+      };
     }),
     createFixSandbox: vi.fn(async (input: { branch: string; baseBranch?: string }) => {
       openNow += 1;
@@ -1905,6 +1929,7 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       }
       return {
         stdout: config.reviewStdout ?? `<review>${config.reviewVerdict ?? "approve"}</review>`,
+        ...(config.reviewUsage !== undefined ? { usage: config.reviewUsage } : {}),
       };
     }),
     // QueueDeps
@@ -1933,12 +1958,15 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
           ? config.rePlanStdout
           : config.planStdout;
       if (stdout !== undefined) {
-        return { stdout };
+        return { stdout, ...(config.planUsage !== undefined ? { usage: config.planUsage } : {}) };
       }
       // Equal priorities for every configured issue: a usable plan whose
       // ordering is the deterministic ascending-number tie rule.
       const priority = Object.fromEntries(issues.map((i) => [i.id, 3]));
-      return { stdout: `<plan>${JSON.stringify({ priority, blockedBy: {} })}</plan>` };
+      return {
+        stdout: `<plan>${JSON.stringify({ priority, blockedBy: {} })}</plan>`,
+        ...(config.planUsage !== undefined ? { usage: config.planUsage } : {}),
+      };
     }),
     pathCommittedOnBranch: vi.fn(async () => config.pathCommittedOnBranch === true),
     // WI-13 T8 seams (FR-007/FR-008): the read-only conflict probe + the
@@ -1955,7 +1983,11 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       if (config.mergerThrows !== undefined) {
         throw new Error(config.mergerThrows);
       }
-      return { stdout: "merger resolution summary", commits: [{ sha: "m3rg3c0m" }] };
+      return {
+        stdout: "merger resolution summary",
+        commits: [{ sha: "m3rg3c0m" }],
+        ...(config.mergerUsage !== undefined ? { usage: config.mergerUsage } : {}),
+      };
     }),
     // WI-13 T12 seam (FR-007/FR-008): publish the merger-resolved branch —
     // can be made to refuse per id. Defaults: succeeds, unused without a conflict.
@@ -2919,7 +2951,7 @@ describe("formatSingleIssueResult (WI-8, FR-002)", () => {
     expect(report.exitCode).toBe(0);
   });
 
-  it("(ii) a PR'd outcome WITHOUT teardownFailure: stderr empty, stdout byte-identical to the pre-WI-8 shape — no teardown line anywhere", () => {
+  it("(ii) a PR'd outcome WITHOUT teardownFailure: stderr empty, stdout is the PR line plus the always-rendered WI-18 spend sentence — no teardown line anywhere", () => {
     const result: OverrideOutcome = {
       kind: "run",
       outcome: { branch: "fix/gh-1", prUrl: PR_URL },
@@ -2928,7 +2960,12 @@ describe("formatSingleIssueResult (WI-8, FR-002)", () => {
     const report = formatSingleIssueResult(result);
 
     expect(report.stderr).toEqual([]);
-    expect(report.stdout).toEqual([`PR opened: ${PR_URL}`]);
+    // WI-18 (D3/T2) superseded the pre-WI-8 byte-identical pin: the spend
+    // sentence now ALWAYS renders (absence arm — the literal carries no usage).
+    expect(report.stdout).toEqual([
+      `PR opened: ${PR_URL}`,
+      "spend: 1 model passes, token usage not available for this provider",
+    ]);
     expect(report.stdout.join("\n")).not.toContain("sandbox teardown failed");
     expect(report.stderr.join("\n")).not.toContain("sandbox teardown failed");
     expect(report.exitCode).toBe(0);
@@ -2948,6 +2985,9 @@ describe("formatSingleIssueResult (WI-8, FR-002)", () => {
 
     expect(report.stderr).toEqual([
       "Loop finished without a PR — REVERTED gh-1: canary red — test_zero_contract",
+      // WI-18 (D3/T2): the spend sentence ALWAYS renders on this arm too,
+      // directly after the attempts slot and before the teardown line.
+      "spend: 1 model passes, token usage not available for this provider",
       `sandbox teardown failed: ${TEARDOWN}`,
     ]);
     expect(report.exitCode).toBe(1);
@@ -4136,6 +4176,171 @@ describe("attempt visibility in the records (WI-17 T2, D5)", () => {
     const defaultSummary = await runQueue(queueRunInput(), singleAttemptDeps);
     expect(defaultSummary.attempts).toEqual([]);
     expect(formatSummary(defaultSummary)).not.toContain("attempts:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WI-18 T2: the spend ledger — per-issue, shared-pass, and run-total token
+// figures in the console report, with the honest-absence posture (D4: a
+// provider that reports no usage is stated, never faked as zeros). Raw
+// integers, no separators (D1's no-formatting posture); the PR body stays
+// spend-silent (D5).
+// ---------------------------------------------------------------------------
+
+describe("spend ledger (WI-18 T2, D2/D4)", () => {
+  const USAGE_A: PassUsage = {
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheCreationInputTokens: 5,
+    cacheReadInputTokens: 10,
+  };
+  const USAGE_PLAN: PassUsage = {
+    inputTokens: 30,
+    outputTokens: 6,
+    cacheCreationInputTokens: 1,
+    cacheReadInputTokens: 3,
+  };
+  const USAGE_REVIEW: PassUsage = {
+    inputTokens: 15,
+    outputTokens: 3,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 2,
+  };
+  const USAGE_MERGER: PassUsage = {
+    inputTokens: 25,
+    outputTokens: 4,
+    cacheCreationInputTokens: 2,
+    cacheReadInputTokens: 1,
+  };
+
+  it("(a) a two-issue run with usage renders per-issue token lines, the shared plan line, and the run total — the sum of every reported figure", async () => {
+    const { deps } = makeQueueDeps({
+      issues: [queueIssue(1), queueIssue(2)],
+      fixUsage: USAGE_A,
+      planUsage: USAGE_PLAN,
+    });
+
+    const summary = await runQueue(queueRunInput(), deps);
+
+    // per-issue: each lane spent one fix pass reporting USAGE_A
+    const text = formatSummary(summary);
+    expect(text).toContain("gh-1: tokens: 100 in / 20 out / 5 cache-write / 10 cache-read");
+    expect(text).toContain("gh-2: tokens: 100 in / 20 out / 5 cache-write / 10 cache-read");
+    // shared: one planner pass (2 eligible issues → the planner is always on)
+    expect(text).toContain("plan tokens: 30 in / 6 out / 1 cache-write / 3 cache-read");
+    // total: 2 fix passes + 1 plan pass, tokens summed across all three
+    expect(text).toContain("spend: 3 model passes, tokens: 230 in / 46 out / 11 cache-write / 23 cache-read");
+    expect(summary.spend?.usageAvailable).toBe(true);
+    expect(summary.spend?.modelPasses).toBe(3);
+  });
+
+  it("(b) a no-usage run states absence honestly: pass count with the not-available sentence, no token line anywhere (D4)", async () => {
+    const { deps } = makeQueueDeps({ issues: [queueIssue(1), queueIssue(2)] });
+
+    const summary = await runQueue(queueRunInput(), deps);
+
+    const text = formatSummary(summary);
+    expect(text).toContain("spend: 3 model passes, token usage not available for this provider");
+    expect(summary.spend?.usageAvailable).toBe(false);
+    expect(summary.spend?.total).toBeUndefined();
+    expect(summary.spend?.perIssue).toEqual([]);
+    expect(summary.spend?.shared).toEqual([]);
+    // absence is stated, never faked: no token figure line renders at all
+    expect(text.split("\n").some((line) => line.includes("tokens:"))).toBe(false);
+  });
+
+  it("(c) attempts and tokens co-render: a retried lane carries both `gh-1: attempts: 2` and the per-issue SUM of its two attempts' usage", async () => {
+    const { deps } = makeQueueDeps({
+      issues: [queueIssue(1)],
+      failFirstVerificationFor: "gh-1",
+      fixUsage: USAGE_A,
+    });
+
+    const summary = await runQueue(queueRunInput({ maxAttempts: 2 }), deps);
+
+    const text = formatSummary(summary);
+    expect(text).toContain("gh-1: attempts: 2");
+    expect(text).toContain("gh-1: tokens: 200 in / 40 out / 10 cache-write / 20 cache-read");
+    // one lane, one issue → no planner pass; both attempts spent and counted
+    expect(text).toContain("spend: 2 model passes, tokens: 200 in / 40 out / 10 cache-write / 20 cache-read");
+  });
+
+  it("(d) the single-issue report carries the spend sentence on both arms — tokens when the provider reported them, the not-available string when it did not", async () => {
+    // PR arm with usage: 1 attempt, tokens rendered.
+    const greenDeps = makeDeps({ fixUsage: USAGE_A });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      greenDeps,
+    );
+    const report = formatSingleIssueResult({ kind: "run", outcome });
+    expect(report.stdout.join("\n")).toContain("PR opened:");
+    expect(report.stdout.join("\n")).toContain(
+      "spend: 1 model passes, tokens: 100 in / 20 out / 5 cache-write / 10 cache-read",
+    );
+
+    // failure arm without usage: pass count still stated, absence stated (D4).
+    const redDeps = makeDeps({ sandbox: sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1) });
+    const redOutcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      redDeps,
+    );
+    const redReport = formatSingleIssueResult({ kind: "run", outcome: redOutcome });
+    expect(redReport.exitCode).toBe(1);
+    expect(redReport.stderr.join("\n")).toContain(
+      "spend: 1 model passes, token usage not available for this provider",
+    );
+  });
+
+  it("(e) the PR body stays spend-silent (D5): a usage-carrying run opens a PR whose body has no token figure", async () => {
+    const deps = makeDeps({ fixUsage: USAGE_A });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      deps,
+    );
+    expect(outcome.prUrl).toContain("/pull/");
+    const body = (deps.createPr.mock.calls[0]![0] as { body: string }).body;
+    expect(body).not.toContain("tokens:");
+    expect(body).not.toContain("model passes");
+  });
+
+  it("(f) the re-plan pass sums into the same `plan` entry (D2: re-plans are planner spend too)", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { deps } = makeQueueDeps({
+        issues: [queueIssue(1), queueIssue(2)],
+        planStdout: '<plan>{"priority":{"gh-1":3,"gh-2":3},"blockedBy":{"gh-2":["gh-1"]}}</plan>',
+        planUsage: USAGE_PLAN,
+      });
+
+      const summary = await runQueue(queueRunInput({ profile: { ...profile, autoMerge: true } }), deps);
+
+      // the initial plan + exactly one post-merge re-plan (FR-006)
+      expect(deps.runPlan).toHaveBeenCalledTimes(2);
+      const text = formatSummary(summary);
+      expect(text).toContain("plan tokens: 60 in / 12 out / 2 cache-write / 6 cache-read");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("(g) opted-in shared passes render their own lines: review and merger token figures beside the planner's, counted in the run total", async () => {
+    const { deps } = makeQueueDeps({
+      issues: [queueIssue(1)],
+      fixUsage: USAGE_A,
+      reviewUsage: USAGE_REVIEW,
+      mergerUsage: USAGE_MERGER,
+      conflictFor: "gh-1",
+    });
+
+    const summary = await runQueue(queueRunInput({ profile: { ...profile, autoMerge: true } }), deps);
+
+    const text = formatSummary(summary);
+    expect(text).toContain("review tokens: 15 in / 3 out / 0 cache-write / 2 cache-read");
+    expect(text).toContain("merger tokens: 25 in / 4 out / 2 cache-write / 1 cache-read");
+    // 1 fix + 1 review + 1 merger = 3 model passes; total = A + review + merger
+    expect(text).toContain(
+      "spend: 3 model passes, tokens: 140 in / 27 out / 7 cache-write / 13 cache-read",
+    );
   });
 });
 

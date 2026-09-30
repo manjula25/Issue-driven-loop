@@ -87,18 +87,18 @@ export function sumPassUsage(
   let cacheCreationInputTokens = 0;
   let cacheReadInputTokens = 0;
   let outputTokens = 0;
-  let any = false;
+  let sawUsage = false;
   for (const iteration of iterations) {
     if (iteration.usage === undefined) {
       continue;
     }
-    any = true;
+    sawUsage = true;
     inputTokens += iteration.usage.inputTokens;
     cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens;
     cacheReadInputTokens += iteration.usage.cacheReadInputTokens;
     outputTokens += iteration.usage.outputTokens;
   }
-  return any
+  return sawUsage
     ? { inputTokens, cacheCreationInputTokens, cacheReadInputTokens, outputTokens }
     : undefined;
 }
