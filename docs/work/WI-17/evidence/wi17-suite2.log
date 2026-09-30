@@ -1,0 +1,28 @@
+
+> software-factory-loop@0.0.0 test:scenarios
+> vitest run --config vitest.scenarios.config.ts
+
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-17
+
+To https://github.com/manjula25/loop-integration-fixture.git
+   bfc20c2..73d7d48  main -> main
+To https://github.com/manjula25/loop-integration-fixture.git
+   d21bd24..381138b  main -> main
+remote: 
+remote: Create a pull request for 't3/hand-mutation' on GitHub by visiting:        
+remote:      https://github.com/manjula25/loop-integration-fixture/pull/new/t3/hand-mutation        
+remote: 
+To https://github.com/manjula25/loop-integration-fixture.git
+   00783db..c4249c4  main -> main
+
+ Test Files  5 passed (5)
+      Tests  12 passed (12)
+   Start at  13:42:31
+   Duration  867.04s (tests 100%)
+
+
+real	14m27.544s
+user	1m2.007s
+sys	0m19.706s
+rc=0

@@ -1,0 +1,16 @@
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-17
+
+To https://github.com/manjula25/loop-integration-fixture.git
+   6d36ade..1b26c00  main -> main
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:37:17
+   Duration  352.81s (tests 100%)
+
+
+real	25m51.962s
+user	0m7.112s
+sys	0m2.697s
+rc=0
