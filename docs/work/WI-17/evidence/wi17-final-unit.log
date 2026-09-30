@@ -1,0 +1,49 @@
+
+> software-factory-loop@0.0.0 test
+> vitest run
+
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-17
+
+From /tmp/syncmain-cMQ2jV/upstream
+   55bea20..7a127bb  main       -> origin/main
+From /tmp/syncmain-cMQ2jV/upstream
+ * branch            main       -> FETCH_HEAD
+Updating 55bea20..7a127bb
+Fast-forward
+ a.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+From /tmp/syncmain-giHSh2/upstream
+   55bea20..7a127bb  main       -> origin/main
+From /tmp/syncmain-giHSh2/upstream
+   55bea20..7a127bb  main       -> main
+From /tmp/syncmain-5KJjNI/upstream
+   55bea20..7a127bb  main       -> origin/main
+From /tmp/syncmain-5KJjNI/upstream
+ * branch            main       -> FETCH_HEAD
+hint: Diverging branches can't be fast-forwarded, you need to either:
+hint: 
+hint: 	git merge --no-ff
+hint: 
+hint: or:
+hint: 
+hint: 	git rebase
+hint: 
+hint: Disable this message with "git config advice.diverging false"
+fatal: Not possible to fast-forward, aborting.
+From /tmp/syncmain-CHZaW7/upstream
+   55bea20..7a127bb  main       -> origin/main
+From /tmp/syncmain-CHZaW7/upstream
+ ! [rejected]        main       -> main  (non-fast-forward)
+From /tmp/syncmain-ow9XtQ/upstream
+ - [deleted]         (none)     -> origin/fix/gh-1
+   55bea20..7a127bb  main       -> origin/main
+From /tmp/syncmain-ow9XtQ/upstream
+   55bea20..7a127bb  main       -> main
+
+ Test Files  10 passed (10)
+      Tests  295 passed (295)
+   Start at  16:16:27
+   Duration  1.48s (transform 42%, tests 28%, import 28%, worker 2%)
+
+rc=0

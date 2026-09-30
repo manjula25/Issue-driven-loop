@@ -1,0 +1,14 @@
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-17
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  11:05:28
+   Duration  595.92s (tests 100%)
+
+
+real	9m56.408s
+user	0m5.202s
+sys	0m2.163s
+rc=0

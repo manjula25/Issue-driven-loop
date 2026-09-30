@@ -1,0 +1,15 @@
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-17
+
+Cloning into '/tmp/loop-integration-fixture'...
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:23:17
+   Duration  629.59s (tests 100%)
+
+
+real	10m30.064s
+user	0m5.549s
+sys	0m2.277s
+rc=0
