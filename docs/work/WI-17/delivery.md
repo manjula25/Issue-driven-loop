@@ -93,17 +93,20 @@ records, verification pass, stage-4 gate), 20 files, +1855/−85.
 
 ## Requested external actions
 
-Push `wi-17` to origin and open a PR to `main` — **prepared, not executed**;
-awaiting the owner's explicit authorization per the skill and constraint 1.
+Push `wi-17` to origin and open a PR to `main` — authorized by the owner
+2026-09-30 ("ye spush").
 
 ## Executed external actions and observed results
 
-None yet.
+- `git push -u origin wi-17` → new branch on origin, rc=0.
+- `gh pr create --base main --head wi-17` → **PR #32**
+  (https://github.com/manjula25/software-factory-loop/pull/32), rc=0; body
+  ends with the required attribution line.
 
 ## Pending actions
 
-On authorization: `git push -u origin wi-17`, then `gh pr create --base main
---head wi-17` with the PR body ending in the required attribution line.
-After merge: delete the remote branch. Separately outstanding from before
-this work item (owner's manual action, classifier-denied for the agent):
-`git push origin --delete wi-16-t4 wi-16-t5 wi-16-t6 wi-16-t7 wi-16-t8`.
+Human review and merge of PR #32 (the harness never merges itself,
+constraint 1). After merge: delete the remote branch. Separately
+outstanding from before this work item (owner's manual action,
+classifier-denied for the agent): `git push origin --delete wi-16-t4
+wi-16-t5 wi-16-t6 wi-16-t7 wi-16-t8`.
