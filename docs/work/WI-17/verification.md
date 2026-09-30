@@ -39,5 +39,18 @@ tree the PR will actually carry.
 
 ## Fresh proving pass at the final candidate
 
-(Appended by the verification-before-completion pass — commands re-run at the
-tree the PR carries; see the section below once recorded.)
+Run 2026-09-30 at `5f3e8fd` (the records commit — the tree the PR carries;
+records-only on top of the code identity `1f5e8dc`). Commands, outputs, and
+exit codes in `evidence/wi17-final-*.log`; rc captured with `rc=$?` on the
+line immediately after each command.
+
+| Command | Result | rc |
+|---|---|---|
+| `npm run typecheck` | clean tsc --noEmit, no output | 0 |
+| `npm test` | Test Files 10 passed (10); Tests 295 passed (295) | 0 |
+| `npm run test:scenarios` | Test Files 5 passed (5); Tests 12 passed (12) | 0 |
+
+The pass re-establishes the T2-era gates at the final tree (the original
+/tmp logs of those runs were lost to the session restart — see
+implementation-notes entry 1) and confirms the whole scenarios suite green a
+second time, with no seed marker on fixture main at pass start.
