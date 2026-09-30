@@ -15,6 +15,7 @@ import {
   opencode,
   run,
   type AgentProvider,
+  type IterationUsage,
   type MergeToHeadBranchStrategy,
   type NamedBranchStrategy,
 } from "@ai-hero/sandcastle";
@@ -61,6 +62,47 @@ export interface FixSandboxHandle {
   close(): Promise<{ readonly preservedWorktreePath?: string }>;
 }
 
+/**
+ * WI-18: one agent pass's token usage, summed over its iterations. The four
+ * figures are Sandcastle's own `IterationUsage` fields verbatim — raw integer
+ * token counts, never dollars (D1: no price tables).
+ */
+export interface PassUsage {
+  readonly inputTokens: number;
+  readonly cacheCreationInputTokens: number;
+  readonly cacheReadInputTokens: number;
+  readonly outputTokens: number;
+}
+
+/**
+ * WI-18 (D4): sum the iterations that carry usage. `undefined` when NO
+ * iteration did — that absence is the honest "token usage not available for
+ * this provider" signal (non-Claude providers report none), never faked as
+ * zeros.
+ */
+export function sumPassUsage(
+  iterations: readonly { usage?: IterationUsage }[],
+): PassUsage | undefined {
+  let inputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let cacheReadInputTokens = 0;
+  let outputTokens = 0;
+  let any = false;
+  for (const iteration of iterations) {
+    if (iteration.usage === undefined) {
+      continue;
+    }
+    any = true;
+    inputTokens += iteration.usage.inputTokens;
+    cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens;
+    cacheReadInputTokens += iteration.usage.cacheReadInputTokens;
+    outputTokens += iteration.usage.outputTokens;
+  }
+  return any
+    ? { inputTokens, cacheCreationInputTokens, cacheReadInputTokens, outputTokens }
+    : undefined;
+}
+
 /** What the loop does with the result of a fix run. */
 export interface FixRunOutcome {
   /** Combined agent stdout — source of RED/GREEN evidence excerpts. */
@@ -71,6 +113,8 @@ export interface FixRunOutcome {
   readonly branch: string;
   /** Path to the run log, when Sandcastle drained one to a file. */
   readonly logFilePath?: string;
+  /** WI-18: tokens the pass spent, when the provider reported them. */
+  readonly usage?: PassUsage;
 }
 
 export interface FixRunInput {
@@ -114,6 +158,7 @@ export async function runFixRun(input: FixRunInput): Promise<FixRunOutcome> {
     commits: result.commits,
     branch: result.branch,
     logFilePath: result.logFilePath,
+    usage: sumPassUsage(result.iterations),
   };
 }
 
@@ -211,8 +256,9 @@ export function planRunOptions(): BoundedRunOptions {
 /**
  * One bounded planning pass over the queue (WI-13 T3, FR-001): stdout is
  * returned for `<plan>` extraction. The caller deletes the branch afterwards.
+ * WI-18: usage rides the return alongside stdout, when the provider reports it.
  */
-export async function runPlan(input: PlanRunInput): Promise<string> {
+export async function runPlan(input: PlanRunInput): Promise<{ stdout: string; usage?: PassUsage }> {
   const result = await run({
     cwd: input.cwd,
     prompt: input.prompt,
@@ -220,7 +266,7 @@ export async function runPlan(input: PlanRunInput): Promise<string> {
     sandbox: sandboxProvider(input.imageName, input.env),
     ...boundedRunOptions("plan", PLAN_BRANCH),
   });
-  return result.stdout;
+  return { stdout: result.stdout, usage: sumPassUsage(result.iterations) };
 }
 
 /**
@@ -232,7 +278,9 @@ export async function runPlan(input: PlanRunInput): Promise<string> {
  * afterwards. `diff` rides the seam per D7 so the review input is complete at
  * the adapter boundary.
  */
-export async function runReview(input: PlanRunInput & { readonly diff: string }): Promise<string> {
+export async function runReview(
+  input: PlanRunInput & { readonly diff: string },
+): Promise<{ stdout: string; usage?: PassUsage }> {
   const result = await run({
     cwd: input.cwd,
     prompt: input.prompt,
@@ -240,7 +288,7 @@ export async function runReview(input: PlanRunInput & { readonly diff: string })
     sandbox: sandboxProvider(input.imageName, input.env),
     ...boundedRunOptions("review", REVIEW_BRANCH),
   });
-  return result.stdout;
+  return { stdout: result.stdout, usage: sumPassUsage(result.iterations) };
 }
 
 /**
@@ -269,7 +317,11 @@ export function mergerRunOptions(branch: string): BoundedRunOptions {
  */
 export async function runMerger(
   input: PlanRunInput & { readonly branch: string; readonly mainRef: string },
-): Promise<{ stdout: string; commits: readonly { readonly sha: string }[] }> {
+): Promise<{
+  stdout: string;
+  commits: readonly { readonly sha: string }[];
+  usage?: PassUsage;
+}> {
   const result = await run({
     cwd: input.cwd,
     prompt: input.prompt,
@@ -277,5 +329,9 @@ export async function runMerger(
     sandbox: sandboxProvider(input.imageName, input.env),
     ...mergerRunOptions(input.branch),
   });
-  return { stdout: result.stdout, commits: result.commits };
+  return {
+    stdout: result.stdout,
+    commits: result.commits,
+    usage: sumPassUsage(result.iterations),
+  };
 }

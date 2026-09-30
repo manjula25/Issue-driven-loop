@@ -33,6 +33,7 @@ import {
   runPlan,
   runReview,
   type AgentSpec,
+  type PassUsage,
   type PlanRunInput,
 } from "./sandcastle-adapter.js";
 import { diffVerification, parsePytestFailures, SUITE_SUMMARY_RE } from "./verify.js";
@@ -109,7 +110,7 @@ export interface LoopDeps {
     branch: string;
     name?: string;
     copyToWorktree?: readonly string[];
-  }): Promise<{ stdout: string; commits: readonly { sha: string }[]; branch: string }>;
+  }): Promise<{ stdout: string; commits: readonly { sha: string }[]; branch: string; usage?: PassUsage }>;
   createFixSandbox(input: {
     cwd: string;
     branch: string;
@@ -146,7 +147,7 @@ export interface LoopDeps {
    * secrets-guards it before the call, and deletes the branch afterwards. A
    * thrown run maps to the `uncertain` verdict class at the call site.
    */
-  runReview(input: PlanRunInput & { readonly diff: string }): Promise<string>;
+  runReview(input: PlanRunInput & { readonly diff: string }): Promise<{ stdout: string; usage?: PassUsage }>;
   /**
    * WI-13 T8 (FR-007): whether merging `branch` into the CURRENT main would
    * conflict — a read-only probe (real wiring: `git merge-tree --write-tree`,
@@ -165,7 +166,7 @@ export interface LoopDeps {
    */
   runMerger(
     input: PlanRunInput & { readonly branch: string; readonly mainRef: string },
-  ): Promise<{ stdout: string; commits: readonly { sha: string }[] }>;
+  ): Promise<{ stdout: string; commits: readonly { sha: string }[]; usage?: PassUsage }>;
   /**
    * WI-13 T12 (FR-007/FR-008): push `branch` to origin (`git push origin
    * <branch>`). Called only on the verified-merger gate's green path, to
@@ -1584,7 +1585,7 @@ async function runPreMergeReview(
     // every other emitted string.
     assertNoSecrets([reviewPrompt], deps.env);
     try {
-      const stdout = await deps.runReview({
+      const { stdout } = await deps.runReview({
         cwd: input.repoDir,
         prompt: reviewPrompt,
         imageName: input.imageName,
@@ -1864,7 +1865,7 @@ async function runCanary(
 
 /** Everything the queue runner needs beyond the single-issue loop. */
 export type QueueLoopDeps = LoopDeps & QueueDeps & {
-  runPlan(input: PlanRunInput): Promise<string>;
+  runPlan(input: PlanRunInput): Promise<{ stdout: string; usage?: PassUsage }>;
 };
 
 export interface QueueRunInput {
@@ -2034,7 +2035,7 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
     const prompt = buildPlanPrompt(split.eligible);
     assertNoSecrets([prompt], deps.env);
     try {
-      const stdout = await deps.runPlan({
+      const { stdout } = await deps.runPlan({
         cwd: input.repoDir,
         prompt,
         imageName: input.imageName,
@@ -2372,7 +2373,7 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
         let rePlanError: string | undefined;
         let rePlan: PlanValue | undefined;
         try {
-          const stdout = await deps.runPlan({
+          const { stdout } = await deps.runPlan({
             cwd: input.repoDir,
             prompt,
             imageName: input.imageName,
@@ -2998,7 +2999,9 @@ async function main(): Promise<void> {
   };
 
   // Real QueueDeps wiring: gh + git subprocesses against the target clone.
-  const queueDeps: QueueDeps & { runPlan(input: PlanRunInput): Promise<string> } = {
+  const queueDeps: QueueDeps & {
+    runPlan(input: PlanRunInput): Promise<{ stdout: string; usage?: PassUsage }>;
+  } = {
     ghJson: realGhJson,
     // WI-7 (FR-001): refresh the clone's remote-tracking refs before the dedup
     // reads them — the revert guard and branch listings describe origin's now,

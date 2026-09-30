@@ -311,7 +311,9 @@ function makeDeps(overrides: DepOverrides = {}) {
       if (overrides.reviewThrows !== undefined) {
         throw new Error(overrides.reviewThrows);
       }
-      return overrides.reviewStdout ?? `<review>${overrides.reviewVerdict ?? "approve"}</review>`;
+      return {
+        stdout: overrides.reviewStdout ?? `<review>${overrides.reviewVerdict ?? "approve"}</review>`,
+      };
     }),
     pathCommittedOnBranch: overrides.pathCommittedOnBranch ?? (async () => false),
     // WI-13 T8 seams (FR-007/FR-008): the read-only conflict probe + the
@@ -1901,7 +1903,9 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       if (config.reviewThrows !== undefined) {
         throw new Error(config.reviewThrows);
       }
-      return config.reviewStdout ?? `<review>${config.reviewVerdict ?? "approve"}</review>`;
+      return {
+        stdout: config.reviewStdout ?? `<review>${config.reviewVerdict ?? "approve"}</review>`,
+      };
     }),
     // QueueDeps
     // WI-14 T1: a configured issue carrying a url keeps it through acquisition
@@ -1929,12 +1933,12 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
           ? config.rePlanStdout
           : config.planStdout;
       if (stdout !== undefined) {
-        return stdout;
+        return { stdout };
       }
       // Equal priorities for every configured issue: a usable plan whose
       // ordering is the deterministic ascending-number tie rule.
       const priority = Object.fromEntries(issues.map((i) => [i.id, 3]));
-      return `<plan>${JSON.stringify({ priority, blockedBy: {} })}</plan>`;
+      return { stdout: `<plan>${JSON.stringify({ priority, blockedBy: {} })}</plan>` };
     }),
     pathCommittedOnBranch: vi.fn(async () => config.pathCommittedOnBranch === true),
     // WI-13 T8 seams (FR-007/FR-008): the read-only conflict probe + the
@@ -2502,7 +2506,7 @@ describe("wave-runner (WI-13 T6, FR-002/FR-003/FR-004/FR-006)", () => {
         if (reviews === 1) {
           await Promise.race([secondReviewStarted, new Promise((resolve) => setTimeout(resolve, 100))]);
         }
-        return "<review>approve</review>";
+        return { stdout: "<review>approve</review>" };
       }),
     );
     deps.mergePr.mockImplementation(track(deps.mergePr.getMockImplementation()!));
