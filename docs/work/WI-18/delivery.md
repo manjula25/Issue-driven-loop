@@ -75,3 +75,9 @@ console report and in an untracked, overwritten-per-run
 
 Per hard constraint 1, this repo never auto-merges — the PR is left for human
 review. No merge was performed by the harness.
+
+## Merge (owner, 2026-10-01)
+
+Merged by the owner (`manjula25`) at 2026-10-01T08:24:23Z, merge commit
+`c4f0505`. PR #33 state: MERGED. The harness did not perform the merge;
+the owner did, after human review — the constraint-1 posture held.
