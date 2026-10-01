@@ -201,7 +201,7 @@
       <tr><td>Speed</td><td>One bug at a time</td><td class="changed"><span class="tag">changed</span> Independent bugs fixed simultaneously; conflicts resolved by a verified referee</td></tr>
       <tr><td>Regressions</td><td>Found by customers, weeks later</td><td class="changed"><span class="tag">changed</span> Prevented by a permanent tripwire test per fix</td></tr>
       <tr><td>Approval</td><td>Human review of raw changes</td><td class="changed"><span class="tag">changed</span> Human review of changes already proven by tests — the human decides, the machine carries the proof</td></tr>
-      <tr><td>Accountability</td><td>Diffuse after the fact</td><td class="changed"><span class="tag">changed</span> Every run ends with an honest, checkable tally</td></tr>
+      <tr><td>Accountability</td><td>Diffuse after the fact</td><td class="changed"><span class="tag">changed</span> Every run ends with an honest, checkable tally — of fixes and of what it cost</td></tr>
     </table>
     </div>
   </div>
@@ -231,8 +231,9 @@
   <div class="feature">
     <h3>Spending cap</h3>
     <p>Each run fixes at most the number of problems it announced at the start, and the team can
-    lower that number for any run.</p>
-    <p class="why"><b>What it prevents:</b> runaway AI cost. <b>Visible signal:</b> the plan — including how many problems will be attempted — is printed before any spend happens.</p>
+    lower that number for any run. A second ceiling caps how many fix attempts a single problem
+    gets before the harness gives up on it — one by default, more only if the team asks for it.</p>
+    <p class="why"><b>What it prevents:</b> runaway AI cost. <b>Visible signal:</b> the plan — including how many problems will be attempted — is printed before any spend happens, and no attempt runs beyond the ceilings the plan announced.</p>
   </div>
 
   <div class="feature">
@@ -253,6 +254,16 @@
     the bug is real and understood. Only then does it attempt the fix, and the fix counts only if
     that same test then passes.</p>
     <p class="why"><b>What it prevents:</b> “fixing” the wrong thing, or breaking something else and calling it done.</p>
+  </div>
+
+  <div class="feature">
+    <h3>A second chance, when the team allows it</h3>
+    <p>When a fix fails its independent re-test, the harness can try again — but only if the team
+    raised the per-problem attempt ceiling above its default of one, and only within that ceiling.
+    Each retry is a fresh start from a clean copy, carrying the previous attempt's exact failure
+    reason into the next prompt so the assistant is not guessing blind. The moment a sibling fix
+    has already stopped the whole run, no further attempt is spent.</p>
+    <p class="why"><b>What it prevents:</b> a single hard problem burning the whole run's budget, and a retry that ignores why it just failed. <b>Deliberate limit:</b> the failure is never hidden to retry quietly — every attempt is recorded, and the people-alert fires only once, when the attempts are used up.</p>
   </div>
 
   <div class="feature">
@@ -457,6 +468,17 @@
     the alert).</p>
     <p class="why"><b>What it replaces:</b> progress reports that need believing. <b>Visible signal:</b> the bottom line is auditable, never marketing.</p>
   </div>
+
+  <div class="feature">
+    <h3>An honest tally of what it cost</h3>
+    <p>Every run also reports what it spent: a count of every model pass — the fix attempts for
+    each problem, plus the planning, review, and conflict-resolution passes the run itself made —
+    always, and the token figures (input, output, and cache reads and writes) when the provider
+    reports them. When the provider reports no usage, the report says so plainly rather than
+    showing zeros. The same tally is written to a durable file in the target project, overwritten
+    each run, and kept out of the project's own tracked files.</p>
+    <p class="why"><b>What it prevents:</b> invisible spend, and the false precision of a zero that actually means “not reported.” <b>Visible signal:</b> a <code>spend:</code> line in every run summary and a <code>last-run.json</code> left in the target project — neither ever shown in a pull-request body, which stays about the fix, not the bill.</p>
+  </div>
 </section>
 
 <!-- ============ EVERY CASE ============ -->
@@ -490,7 +512,7 @@
     <table>
       <tr><th>The situation</th><th>What the harness does</th></tr>
       <tr><td>The bug can't be reproduced</td><td>Reports it failed, with the reason, and attempts no fix. A problem nobody can pin down is not one to guess at.</td></tr>
-      <tr><td>The fix doesn't make the reproduction test pass</td><td>Reports it failed, leaves the problem open, and moves on to the next one.</td></tr>
+      <tr><td>The fix doesn't make the reproduction test pass</td><td>Reports it failed, leaves the problem open, and moves on to the next one — unless the team allowed more than one attempt, in which case it tries again from a clean copy with the failure fed forward, up to the ceiling.</td></tr>
       <tr><td>The full suite fails for a reason that was <em>already</em> failing before the fix</td><td>Doesn't hold it against the fix. Only newly broken things count.</td></tr>
       <tr><td>The test run produced no evidence that any test actually ran</td><td>Doesn't count as a pass. Silence is not a result.</td></tr>
       <tr><td>Throwing away a finished working copy fails</td><td>Writes down that it failed, and leaves the verdict it belonged to exactly as it was. Messy tidying never rewrites the outcome.</td></tr>
@@ -515,7 +537,8 @@
   <div class="tablewrap">
     <table>
       <tr><th>The situation</th><th>What the harness does</th></tr>
-      <tr><td>A GitHub problem fails</td><td>Comments on the issue the moment it fails, carrying the same reason, the kind of failure, and a pointer to the operator's log — and tags the person to look at, when one is configured.</td></tr>
+      <tr><td>A GitHub problem fails</td><td>Comments on the issue the moment the lane finally fails, carrying the same reason, the kind of failure, and a pointer to the operator's log — and tags the person to look at, when one is configured.</td></tr>
+      <tr><td>More than one attempt was allowed, and an early attempt failed</td><td>Does <em>not</em> alert yet — it retries. The people-alert fires once, when the attempts are used up, with the reason carrying how many were spent.</td></tr>
       <tr><td>Nobody is configured to be tagged</td><td>Still comments, and says plainly that no one is set up to be notified. It doesn't stay quiet because the setting is missing.</td></tr>
       <tr><td>A problem is failing right now</td><td>Wears a visible <code>harness-failed</code> label on GitHub, so the state is obvious without reading logs.</td></tr>
       <tr><td>The problem is then fixed and delivered</td><td>The label comes off — on every delivered outcome, including fixes left open for a human to merge.</td></tr>
@@ -577,6 +600,7 @@
       <li><span class="pick">Re-test everything, including machine merges.</span> <span class="rejected">Rejected: <s>trusting the conflict resolver's combined fix</s></span> — machine conflict resolution is exactly the kind of output the one rule exists for.</li>
       <li><span class="pick">Stop and ask when unsure.</span> <span class="rejected">Rejected: <s>best-effort guesses with silent retries</s></span> — a visible failure is recoverable; a hidden one compounds.</li>
       <li><span class="pick">Fall back to slow-and-safe when the plan is uncertain.</span> <span class="rejected">Rejected: <s>running everything in parallel regardless</s></span> — speed is sacrificed first, never safety.</li>
+      <li><span class="pick">Report what it cost, honestly — including “not available.”</span> <span class="rejected">Rejected: <s>hide the spend, or fake a zero when the provider reports nothing</s></span> — a hidden bill compounds; a zero that means “unknown” is a lie.</li>
     </ul>
   </div>
 </section>
@@ -612,6 +636,8 @@
       <tr><td>Canary check</td><td>A full re-test of the project right after a fix lands — the early warning for anything the fix disturbed.</td></tr>
       <tr><td>Revert</td><td>Automatically taking a landed fix back out, returning the shared code to its last known-good state.</td></tr>
       <tr><td>Run</td><td>One session of the harness working through its queue, ending with an honest summary.</td></tr>
+      <tr><td>Spend tally</td><td>The per-run account of model passes and token usage — in the console summary and a durable <code>last-run.json</code> left in the target project.</td></tr>
+      <tr><td>Retry</td><td>A second-or-later fix attempt for the same problem, from a clean copy, carrying the previous failure forward — only within the per-problem attempt ceiling.</td></tr>
     </table>
     </div>
   </div>
@@ -623,7 +649,8 @@
   <p>
     Established by live runs with a real AI: the complete flow described here, on our practice
     repository — parallel fixes, collisions resolved through the graded referee, auto-landing under
-    the undo net, and honest failures. The next validation stage is the same flow on real (non-client)
+    the undo net, honest failures, a wrong-first attempt corrected on a bounded retry, and the
+    spend tally with its durable file. The next validation stage is the same flow on real (non-client)
     repositories, and then a first client project once the confidentiality decision is made. Not yet
     tested: other repositories, other AI providers, and heavier workloads than three parallel fixes.
     This guide describes designed and proven behaviour, not a production rollout claim.
@@ -633,6 +660,11 @@
     The assembled command-line path — the exact git and GitHub commands it runs when you start it —
     is proved by those live runs, not by the automated checks. So a change to that wiring is not
     covered until the next live run, and "the checks pass" is not evidence about it.
+  </p>
+  <p>
+    <b>One boundary on the spend tally.</b> The live runs prove the model-pass count and the honest
+    “usage not available” posture (the practice agent reports no token usage). A real provider's
+    token figures are pinned at the unit level, not yet driven by a live run.
   </p>
 </section>
 
