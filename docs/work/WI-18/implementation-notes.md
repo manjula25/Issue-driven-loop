@@ -142,3 +142,86 @@ thrown-`runFixRun` adjacent confirmed plan-level, not re-flagged.
 
 **T2 checkpoint accepted at dd30071** — both sequential reviews apply to the
 exact candidate.
+
+## T3 — `last-run.json`, the durable report (commit 0855e39, accepted 2026-10-01)
+
+- RED observed honestly at the T2 checkpoint (pre-edit worktree state):
+  `npx vitest run src/loop.test.ts -t "run report"` → 5 failed / 181 skipped
+  (no such exports/builders/wiring yet).
+- Design (plan-pinned): three new exports in `src/loop.ts` — `buildRunReport`
+  (queue) and `buildSingleIssueReport` (single-issue) pure JSON builders
+  (2-space indent, plan-pinned key order; `tokens` key present ONLY when usage
+  is available — D4 honest absence, never zeros); `writeRunReportFile` the real
+  fs writer (`mkdir .loop-harness` + create-or-append-never-rewrite `.gitignore`
+  ensure: absent → one line, present-without → append with newline-prefix guard
+  for the no-trailing-newline case, present-with → byte-identical untouched;
+  overwrite `last-run.json`); `writeRunReportBestEffort` the WI-11-recording-
+  posture wrapper (throw → `RUN REPORT WRITE FAILED: <message>` via
+  `console.error` through `assertNoSecrets`, never sets `process.exitCode`).
+  `LoopDeps.writeRunReport` seam added; real seam wired in `main()`'s deps
+  literal; `main()` wiring on BOTH paths AFTER the console report — queue
+  inside `emit()` on the try arm AND the `QueueAbortedError` catch arm (a run
+  that earned PRs before aborting still spent), single-issue after the report
+  loop gated on `result.kind === "run"` (skipped kinds are dedup no-ops that
+  spent nothing). Five new "run report (WI-18 T3)" tests; `writeRunReport:
+  vi.fn()` added to both `makeDeps` and `makeQueueDeps`.
+- GREEN + gates at 0855e39: `npx vitest run src/loop.test.ts -t "run report"` →
+  5 passed | 181 skipped; `npm run typecheck` rc=0; `npm test` 10 files / 309
+  rc=0.
+- Test-count drift (carried from T2): plan T3 step 5 states 306 (301 + 5); the
+  T2 checkpoint actually landed at 304 (the 7-vs-6 + (h)/(i) additions), so the
+  real T3 total is 304 + 5 = 309. The plan text needs no edit; the drift is
+  recorded here.
+
+### T3 spec review — PASS (2026-10-01, at 0855e39)
+
+Read-only reviewer re-ran the gates (typecheck rc=0; 10 files / 309 rc=0;
+focused `-t "run report"` 5 passed) and verified every plan step: builders'
+key order + the conditional `tokens` key (D4), `LoopDeps.writeRunReport` seam +
+the real `writeRunReportFile` impl (mkdir + create-or-append-never-rewrite
+`.gitignore`), `main()` wiring on BOTH paths AFTER the console report through
+the best-effort wrapper (queue try + `QueueAbortedError` catch; single-issue
+gated on `result.kind === "run"`), the 5 tests (a)–(e) present and green, the
+commit message exact, and D4 honest-absence (`tokens` absent when no usage,
+never zeros). No blocking findings.
+- ADJACENT-NOTE: plan step 5's stated 306-test figure vs the actual 309 —
+  carried from T2, already recorded, not a T3 defect.
+- NIT: single-issue write gated on `result.kind === "run"` so skipped kinds
+  write no report — plan L172 says "single-issue mode after the report loop"
+  without requiring all kinds; skipped kinds spent nothing, so the gating is
+  D4-consistent (the code comment states the rationale).
+- NIT: in `emit()` the durable write precedes the abort's `console.error(abort)`;
+  still AFTER the console report (the summary), so plan-compliant — the abort
+  line is a separate stderr fact.
+
+### T3 quality review — PASS (2026-10-01, at 0855e39)
+
+Read-only reviewer re-ran the gates (typecheck rc=0; 10 files / 309 rc=0;
+focused 5 passed) and verified: the `.gitignore` ensure logic across all four
+edge cases (absent / present-without-trailing-newline / present-no-newline /
+present-with) including the substring trap
+(`# do not last-run.json-backup` → full-line match, no false positive) and the
+empty/newline-only cases — create-or-append-never-rewrite, no bug;
+`writeRunReportBestEffort` routes the error message through `assertNoSecrets`
+before `console.error` and never assigns `process.exitCode` (test (d) asserts
+it); builders' key order deterministic (object-literal insertion order
+preserved by `JSON.stringify`) and the `spend?.` chaining is justified by the
+real optional field, not speculative generality; `main()` wiring correct on
+both paths with no duplication (single `emit` closure serves both arms); all
+five tests non-vacuous, asserting at the exported public seam (no source-text
+assertions), test (e) real (`mkdtemp` scratch dir, four sub-cases, `rmSync` in
+`finally`). No documented standard violated (no lint step honored,
+`assertNoSecrets` seam used, `workflow.md` untouched). No blocking findings.
+- MINOR (deferred follow-up): the `writeRunReportBestEffort` comment claims
+  "NEVER changes the exit code or displaces the verdict" — true for a writer
+  throw, but `assertNoSecrets` itself throws on a secret leak *inside* the
+  catch and would propagate (correct precedence: hard constraint 3 / a secret
+  leak SHOULD throw, winning over best-effort). Behavior is right; the comment
+  wording is loose. Recorded as a follow-up, not a T3 defect — a comment
+  tightening would change the candidate and cost two full review reruns for a
+  wording fix the reviewer classified non-blocking.
+- NIT: the inline ternary in the `.gitignore` append prefix guard could be a
+  one-line helper — readable as-is, judgement call.
+
+**T3 checkpoint accepted at 0855e39** — both sequential reviews apply to the
+exact candidate.
