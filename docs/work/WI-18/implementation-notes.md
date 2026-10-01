@@ -225,3 +225,124 @@ assertions), test (e) real (`mkdtemp` scratch dir, four sub-cases, `rmSync` in
 
 **T3 checkpoint accepted at 0855e39** — both sequential reviews apply to the
 exact candidate.
+
+## T4 — scenario evidence: the report file and the absence posture (commit 567436c, accepted 2026-10-01)
+
+- RED observed honestly at the base tree: throwaway sibling worktree
+  `wi-18-red` at `fa43bd8` (no WI-18 code), extended test copied in, `npm
+  install`, `npx vitest run --config vitest.scenarios.config.ts
+  tests/scenarios/scenario-1.test.ts -t "the queue path fixes gh-1"` → 1
+  failed | 1 skipped, RED_RC=1 — the test failed at the FIRST new assertion
+  (the spend regex), because `formatSummary` prints no spend line and
+  `main()` writes no `last-run.json` at `fa43bd8`. Evidence:
+  `docs/work/WI-18/evidence/t4-red.log`. Worktree removed after.
+- GREEN at the T3 checkpoint (0855e39): same focused run in the wi-18
+  worktree → 1 passed | 1 skipped, GREEN_RC=0. Evidence: `t4-green.log`.
+  (vitest does not echo the CLI's `run.stdout` on success, so the spend line
+  is not in vitest's console log — the passing regex assertion IS the
+  evidence the line was in `run.stdout`.)
+- Design (scenario-1.test.ts, first test, after the existing repro-pair
+  assertions): the spend stdout regex
+  `/^spend: \d+ model passes, token usage not available for this provider$/m`
+  (D4 honest absence — the scripted agent reports no usage); `last-run.json`
+  exists/parses with `usageAvailable === false`, `modelPasses >= 1`, and
+  `"tokens" in report === false` (D4 in the file too); `.loop-harness/.gitignore`
+  contains the `last-run.json` line; `git check-ignore .loop-harness/last-run.json`
+  exits 0 and echoes the path (the .gitignore doing its job).
+- PLAN-WORDING DIVERGENCE (recorded here and in the test comment, plan T4
+  L202–203): the plan says "`git status --porcelain` shows `last-run.json`
+  untracked (the .gitignore doing its job)." That is unsatisfiable as written
+  — an *ignored* file never appears in `git status --porcelain` by default,
+  so it can never show as `?? last-run.json`. The implementer instead proves
+  the real invariant (last-run.json is ignored, never staged/committed) with
+  `git check-ignore` (exit 0 + path echo) AND `expect(porcelain).not.toContain("last-run.json")`.
+  This faithfully enforces the plan's INTENT (the .gitignore keeps
+  last-run.json out of git); only the literal wording diverges, because the
+  plan conflated "ignored" with "untracked." The test comment names this
+  explicitly.
+
+### Scope expansion (owner-approved 2026-10-01, beyond the plan's named files)
+
+T4's plan named only `tests/scenarios/scenario-1.test.ts`. The whole-suite
+lap (`npm run test:scenarios`) FAILED on the first run — 4 of 5 files,
+SUITE_RC=1 (evidence: `t4-whole-suite.log`):
+- `command.test.ts` `expectFixtureClean` (line 98, a pre-WI-18 assertion
+  that `git status --porcelain === ""` after an empty-queue run) failed on
+  `?? .loop-harness/.gitignore` — every run now writes the `.loop-harness/`
+  home, including empty-queue runs.
+- `resetFixture` step 8 (the clean-tree assertion before each run) failed
+  for scenarios 1/3/4: `git clean -fdq` removes the untracked `.gitignore`
+  (which was ignoring `last-run.json`), so `last-run.json` surfaces as
+  `?? .loop-harness/last-run.json`.
+
+Root cause: T3's `.loop-harness/.gitignore`-as-untracked-file design (D3,
+the attachments/ precedent) is incompatible with the scenario suite's strict
+spotless-fixture invariant. This is a cross-surface interaction the plan's
+evidence boundary missed, not a T3 code bug. The owner approved extending
+T4's scope to the two shared scenario files (chosen over re-opening T3's
+design):
+- `tests/scenarios/command.test.ts`: `expectFixtureClean` now filters
+  `.loop-harness/` lines from porcelain — the harness's output home is
+  expected per-run content, not a fixture mutation (the same posture as the
+  committed `profile.json` and the `attachments/` precedent). Tracked-tree
+  integrity is STILL separately guarded by the `treeDiff`-against-seed
+  assertion (line 73) and `localHead === remoteHead` (line 93), so the
+  filter's breadth cannot mask a tracked mutation.
+- `tests/scenarios/fixture-reset.ts`: the reset's clean step now also
+  `rmSync`s `.loop-harness/last-run.json` (by name, `force: true`) —
+  `git clean -fdq` skips it (ignored at pass-start), and removing the
+  `.gitignore` would otherwise un-ignore it. Not dead code (the clean can't
+  reach it); targeted by name so the tracked `profile.json` is never touched;
+  a blanket `git clean -fdx` was rejected (it would delete `.env` and other
+  ignored files the fixture depends on).
+No harness-code (`src/`) change; the D3 untracked-.gitignore posture holds
+for real target repos, and the fixture's stricter invariant is handled by
+the fixture's own machinery.
+
+Re-run after the fix: `npm run test:scenarios` → 5 files / 12 tests,
+SUITE2_RC=0 (evidence: `t4-whole-suite-2.log`). The suite count is unchanged
+(the assertions extend an existing test). Plan T4's "~10–15 min" whole-suite
+estimate was optimistic — the lap measured ~1h11m (`fileParallelism: false`
+across 5 files incl. the killed-run ~1035s and scenario-4 retry); recorded
+here so the figure is not trusted next time.
+
+### T4 spec review — PASS (2026-10-01, at 567436c)
+
+Read-only reviewer verified every T4 requirement: the spend regex + the
+`last-run.json` parse (incl. the stronger `"tokens" in report === false`),
+the `.gitignore` line, the check-ignore divergence (judged correct in intent
+and honestly recorded in the test comment), the honest RED/GREEN logs, the
+first-lap failure + re-run green, the commit message subject match + honest
+body, and the scope expansion (justified by the first-lap breakage, minimal,
+no `src/` change). Relied on the committed evidence logs (did not re-run the
+~1h suite); re-ran typecheck rc=0. No blocking findings.
+- MINOR (process, addressed here): the ledger had no T4 entry yet — the
+  normal flow (the entry is appended after checkpoint acceptance, as for
+  T2/T3); this IS that entry.
+- NIT (addressed here): the plan-wording divergence is now explicitly named
+  above (the test comment + this ledger entry are the two record locations).
+
+### T4 quality review — PASS (2026-10-01, at 567436c)
+
+Read-only reviewer verified: assertions at the public seam (CLI stdout +
+written file + git, no source-text); the check-ignore + not-contain
+combination a correct non-vacuous proof; the spend regex robust to the exact
+count; `force: true` correct; the `rmSync` not dead code (`git clean -fdq`
+can't reach the ignored file) and safer than a blanket `git clean -fdx`
+(which would delete `.env`); no real secrets in the evidence logs (only the
+"token usage" assertion string). No documented-standard violations. No
+blocking findings.
+- MINOR: the `command.test.ts` filter `.loop-harness/` is broader than the
+  two exact untracked paths — could hypothetically mask a tracked
+  `profile.json` mutation. Non-blocking because tracked-tree integrity is
+  separately guarded by the `treeDiff`-against-seed assertion (line 73) and
+  `localHead === remoteHead` (line 93); the porcelain filter's job is only
+  working-tree (untracked) dirt. Recorded as a follow-up, not a T4 defect —
+  tightening it would change the candidate and cost two full review reruns
+  for a hypothetical gap other assertions already cover.
+- NIT: the `.loop-harness/last-run.json` path literal is reconstructed in
+  scenario-1 and fixture-reset — semantically distinct (read vs remove) in
+  test scaffolding; not worth a shared constant.
+
+**T4 checkpoint accepted at 567436c** — both sequential reviews apply to the
+exact candidate.
