@@ -12,7 +12,7 @@
  * demonstrations (planted entry-path defect, induced skip), not by this green.
  */
 import { execFileSync, spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -270,6 +270,44 @@ describe("scenario 1 — reproduce-then-fix, end to end (WI-16 T4)", () => {
       rmSync(pre, { recursive: true, force: true });
       rmSync(post, { recursive: true, force: true });
     }
+
+    // WI-18 T4: the spend dimension — D4 honest absence, the only posture a
+    // scripted-agent run can show (it reports no usage). The console report
+    // carries the byte-pinned absence sentence with the pass count; the
+    // durable file is the queue variant (usageAvailable false, no tokens key,
+    // modelPasses >= 1). The .loop-harness/.gitignore the writer ensures is
+    // what keeps last-run.json untracked: an ignored file never appears in
+    // `git status --porcelain`, so the .gitignore's job is proven by
+    // `git check-ignore` (exit 0, path echoed) and by last-run.json's absence
+    // from porcelain — NOT by a `?? last-run.json` line, which an ignored file
+    // can never produce. (The plan's "shows last-run.json untracked" wording
+    // reflects a common ignored-vs-untracked conflation; this block asserts the
+    // real invariant the .gitignore enforces.)
+    expect(run.stdout ?? "").toMatch(
+      /^spend: \d+ model passes, token usage not available for this provider$/m,
+    );
+    const reportPath = join(FIXTURE_CLONE_DIR, ".loop-harness", "last-run.json");
+    expect(existsSync(reportPath)).toBe(true);
+    const report = JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>;
+    expect(report.usageAvailable).toBe(false);
+    expect(report.modelPasses).toBeGreaterThanOrEqual(1);
+    expect("tokens" in report).toBe(false);
+
+    const gitignorePath = join(FIXTURE_CLONE_DIR, ".loop-harness", ".gitignore");
+    expect(existsSync(gitignorePath)).toBe(true);
+    expect(readFileSync(gitignorePath, "utf8")).toContain("last-run.json");
+
+    // The .gitignore doing its job: last-run.json is ignored (check-ignore
+    // exits 0 and echoes the path) and therefore absent from porcelain — it
+    // can never be staged or committed by a later `git add -A`.
+    const ignored = spawnSync("git", ["check-ignore", ".loop-harness/last-run.json"], {
+      cwd: FIXTURE_CLONE_DIR,
+      encoding: "utf8",
+    });
+    expect(ignored.status).toBe(0);
+    expect(ignored.stdout.trim()).toBe(".loop-harness/last-run.json");
+    const porcelain = gitIn(["status", "--porcelain"]);
+    expect(porcelain).not.toContain("last-run.json");
   }, 1_200_000);
 
   it("a run killed mid-flight leaves a branch and an open PR; the next run still converges", async () => {

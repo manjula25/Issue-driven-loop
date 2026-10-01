@@ -1,0 +1,57 @@
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-18-red
+
+Cloning into '/tmp/loop-integration-fixture'...
+ ❯ tests/scenarios/scenario-1.test.ts (2 tests | 1 failed | 1 skipped) 599286ms
+   ❯ scenario 1 — reproduce-then-fix, end to end (WI-16 T4) (2)
+     × the queue path fixes gh-1: repro test committed, PR merged, canary green 599284ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/scenarios/scenario-1.test.ts > scenario 1 — reproduce-then-fix, end to end (WI-16 T4) > the queue path fixes gh-1: repro test committed, PR merged, canary green
+AssertionError: expected '\n> software-factory-loop@0.0.0 loop\…' to match /^spend: \d+ model passes, token usag…/m
+
+- Expected:
+/^spend: \d+ model passes, token usage not available for this provider$/m
+
++ Received:
+"
+> software-factory-loop@0.0.0 loop
+> tsx src/loop.ts --repo /tmp/loop-integration-fixture --provider claude-via-proxy --image sandcastle-loop-test
+
+label \"harness-failed\" already exists — nothing to create
+plan: all unblocked
+plan: attempt gh-1
+[gh-1] Started on branch fix/gh-1
+  tail -f /tmp/loop-integration-fixture/.sandcastle/logs/fix-gh-1-gh-1.log
+branch 'fix/gh-1' set up to track 'origin/fix/gh-1'.
+[review] Started on branch loop/review
+  tail -f /tmp/loop-integration-fixture/.sandcastle/logs/loop-review-review.log
+Updating 04bdd06..2187393
+Fast-forward
+ src/loopsample/textops.py       | 2 +-
+ tests/fixed-issues/test_gh_1.py | 8 ++++++++
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+ create mode 100644 tests/fixed-issues/test_gh_1.py
+Run summary — attempted: 1 (fixed: 1, failed: 0) | skipped-duplicate: 0 | skipped-merged: 0 | not-admitted: 0
+PR: https://github.com/manjula25/loop-integration-fixture/pull/64
+MERGED gh-1: https://github.com/manjula25/loop-integration-fixture/pull/64 @ 2187393ec95f2f3a266d4d6279296c1fb6e9133c (canary: green)
+"
+
+ ❯ tests/scenarios/scenario-1.test.ts:286:30
+    284|     // reflects a common ignored-vs-untracked conflation; this block a…
+    285|     // real invariant the .gitignore enforces.)
+    286|     expect(run.stdout ?? "").toMatch(
+       |                              ^
+    287|       /^spend: \d+ model passes, token usage not available for this pr…
+    288|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 skipped (2)
+   Start at  10:21:35
+   Duration  599.46s (tests 100%)
+
+RED_RC=1
