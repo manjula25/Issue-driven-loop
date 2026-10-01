@@ -5,7 +5,7 @@
  * gate is `diffVerification` on output from a sandbox the agent never touched.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   assertClearedForAttachments,
@@ -241,6 +241,13 @@ export interface LoopDeps {
    * by vitest — correctness is code review plus the recorded probes.
    */
   readIssueLabels(repoDir: string, issue: NormalizedIssue): Promise<readonly string[]>;
+  /**
+   * WI-18 (T3): write the durable run report JSON to `<repoDir>/.loop-harness/
+   * last-run.json` (real wiring: `writeRunReportFile`). Called by `main()` on
+   * BOTH paths AFTER the console report, always through
+   * `writeRunReportBestEffort` — a throw is recorded, never fatal.
+   */
+  writeRunReport(repoDir: string, json: string): void;
 }
 
 export interface SingleIssueInput {
@@ -2789,6 +2796,107 @@ export function formatSummary(summary: QueueSummary): string {
   ].join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// WI-18 T3: last-run.json — the durable run report, written to the target
+// repo's `.loop-harness/`, overwritten per run, untracked by its own ensured
+// `.gitignore` line. Same honest-absence posture as the console report (D4:
+// `usageAvailable: false` with NO `tokens` key, never zeros).
+// ---------------------------------------------------------------------------
+
+/**
+ * WI-18 (T3): the queue run report as JSON — 2-space indent, keys in the
+ * plan-pinned order: `date`, `usageAvailable`, `modelPasses`, `tokens` (only
+ * when available), the attempted/fixed/failed COUNTS (the ids live in the
+ * console report and `perIssue`), `prUrls`, `perIssue` (`[{ id, tokens }]`),
+ * `sharedPasses` (`[{ pass, tokens }]`). A hand-built summary without `spend`
+ * renders the D4 absence arm (`usageAvailable: false`, no `tokens` key).
+ */
+export function buildRunReport(summary: QueueSummary, isoDate: string): string {
+  const spend = summary.spend;
+  return JSON.stringify(
+    {
+      date: isoDate,
+      usageAvailable: spend?.usageAvailable ?? false,
+      modelPasses: spend?.modelPasses ?? 0,
+      ...(spend?.usageAvailable && spend.total !== undefined ? { tokens: spend.total } : {}),
+      attempted: summary.attempted.length,
+      fixed: summary.fixed.length,
+      failed: summary.failed.length,
+      prUrls: [...summary.prUrls],
+      perIssue: (spend?.perIssue ?? []).map(([id, tokens]) => ({ id, tokens })),
+      sharedPasses: (spend?.shared ?? []).map(([pass, tokens]) => ({ pass, tokens })),
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * WI-18 (T3): the single-issue run report as JSON — `date`, `id`, `outcome`
+ * (`fixed` when a PR landed with no failure, else `failed`), then the same
+ * token keys as the queue variant. The pass count is the lane's fix passes
+ * only (`fixPasses ?? attempts ?? 1`); shared passes and the planner belong
+ * to the queue report.
+ */
+export function buildSingleIssueReport(id: string, outcome: LoopOutcome, isoDate: string): string {
+  return JSON.stringify(
+    {
+      date: isoDate,
+      id,
+      outcome: outcome.prUrl !== undefined && outcome.failure === undefined ? "fixed" : "failed",
+      usageAvailable: outcome.usage !== undefined,
+      modelPasses: outcome.fixPasses ?? outcome.attempts ?? 1,
+      ...(outcome.usage !== undefined ? { tokens: outcome.usage } : {}),
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * WI-18 (T3): the real durable-report writer — mkdir `.loop-harness`, ensure
+ * its `.gitignore` ignores `last-run.json` (create the file with exactly that
+ * line when absent; APPEND the line when a `.gitignore` exists without it —
+ * the existing content is never rewritten; leave the file untouched when the
+ * line is already there), then overwrite `last-run.json` with this run's
+ * report.
+ */
+export function writeRunReportFile(repoDir: string, json: string): void {
+  const dir = join(repoDir, ".loop-harness");
+  mkdirSync(dir, { recursive: true });
+  const gitignorePath = join(dir, ".gitignore");
+  if (!existsSync(gitignorePath)) {
+    writeFileSync(gitignorePath, "last-run.json\n");
+  } else {
+    const existing = readFileSync(gitignorePath, "utf8");
+    if (!existing.split("\n").includes("last-run.json")) {
+      appendFileSync(gitignorePath, `${existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""}last-run.json\n`);
+    }
+  }
+  writeFileSync(join(dir, "last-run.json"), json);
+}
+
+/**
+ * WI-18 (T3): the best-effort emission wrapper `main()` routes every report
+ * write through — the WI-11 recording posture: a throw is captured, guarded
+ * through `assertNoSecrets`, printed as `RUN REPORT WRITE FAILED: <message>`
+ * on console.error, and NEVER changes the exit code or displaces the verdict
+ * the run already earned.
+ */
+export function writeRunReportBestEffort(
+  repoDir: string,
+  json: string,
+  deps: Pick<LoopDeps, "env" | "writeRunReport">,
+): void {
+  try {
+    deps.writeRunReport(repoDir, json);
+  } catch (error) {
+    const message = `RUN REPORT WRITE FAILED: ${error instanceof Error ? error.message : String(error)}`;
+    assertNoSecrets([message], deps.env);
+    console.error(message);
+  }
+}
+
 /**
  * `--max-issues` (WI-13 FR-005: an explicit optional ceiling, no default) is
  * validated at startup when passed, before any acquisition or spend.
@@ -3302,6 +3410,11 @@ async function main(): Promise<void> {
     async pushBranch(repoDir: string, branch: string) {
       execFileSync("git", ["push", "origin", branch], { cwd: repoDir, stdio: "inherit" });
     },
+    // WI-18 (T3): the durable run report — the real fs writer behind the
+    // `writeRunReport` seam (see `writeRunReportFile`).
+    writeRunReport(repoDir, json) {
+      writeRunReportFile(repoDir, json);
+    },
   };
 
   // Real QueueDeps wiring: gh + git subprocesses against the target clone.
@@ -3388,6 +3501,17 @@ async function main(): Promise<void> {
     if (report.exitCode === 1) {
       process.exitCode = 1;
     }
+    // WI-18 (T3): the durable report, AFTER the console report and always
+    // best-effort — a failed write is recorded on console.error, never fatal.
+    // Only a run outcome has spend figures to record; the skipped kinds are
+    // dedup no-ops that spent nothing.
+    if (result.kind === "run") {
+      writeRunReportBestEffort(
+        repoDir,
+        buildSingleIssueReport(issue.id, result.outcome, new Date().toISOString()),
+        deps,
+      );
+    }
     return;
   }
 
@@ -3398,6 +3522,13 @@ async function main(): Promise<void> {
     const text = formatSummary(summary);
     assertNoSecrets(abort !== undefined ? [text, abort] : [text], guardEnv);
     console.log(text);
+    // WI-18 (T3): the durable report on BOTH arms — a run that earned PRs
+    // before aborting still spent. AFTER the console report, best-effort.
+    writeRunReportBestEffort(
+      repoDir,
+      buildRunReport(summary, new Date().toISOString()),
+      deps,
+    );
     if (abort !== undefined) {
       console.error(abort);
       process.exitCode = 1;

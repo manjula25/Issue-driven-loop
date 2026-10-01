@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -14,6 +14,8 @@ import {
   buildFixPrompt,
   buildPrBody,
   buildReviewPrompt,
+  buildRunReport,
+  buildSingleIssueReport,
   fixBranch,
   formatSingleIssueResult,
   formatSummary,
@@ -26,8 +28,11 @@ import {
   runQueue,
   runSingleIssue,
   syncMainToOrigin,
+  writeRunReportBestEffort,
+  writeRunReportFile,
   type OverrideOutcome,
   type ProjectProfile,
+  type QueueSummary,
 } from "./loop.js";
 import {
   REVIEW_BRANCH,
@@ -342,6 +347,10 @@ function makeDeps(overrides: DepOverrides = {}) {
         throw new Error(overrides.pushThrows);
       }
     }),
+    // WI-18 T3 seam: the durable run report — never called by the loop itself
+    // (main() owns the wiring, scenarios cover it); the no-op keeps the
+    // LoopDeps shape complete.
+    writeRunReport: vi.fn(),
   };
 }
 
@@ -1999,6 +2008,8 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
         throw new Error("git: push rejected — non-fast-forward");
       }
     }),
+    // WI-18 T3 seam: the durable run report — never called by runQueue itself.
+    writeRunReport: vi.fn(),
   };
   return { deps, maxOpen: () => maxOpen };
 }
@@ -4396,6 +4407,215 @@ describe("spend ledger (WI-18 T2, D2/D4)", () => {
     );
     expect(thrownSummary.spend?.modelPasses).toBe(2);
     expect(thrownSummary.spend?.usageAvailable).toBe(false);
+  });
+});
+
+// WI-18 T3: last-run.json — the durable report written to the target repo's
+// `.loop-harness/`, overwritten per run, untracked by its own ensured
+// `.gitignore` line. Same honest-absence posture as the console report (D4:
+// `usageAvailable: false` with NO `tokens` key, never zeros).
+// ---------------------------------------------------------------------------
+
+describe("run report (WI-18 T3)", () => {
+  const USAGE_A: PassUsage = {
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheCreationInputTokens: 5,
+    cacheReadInputTokens: 10,
+  };
+  const USAGE_PLAN: PassUsage = {
+    inputTokens: 30,
+    outputTokens: 6,
+    cacheCreationInputTokens: 1,
+    cacheReadInputTokens: 3,
+  };
+
+  /** A hand-built summary exercising every key the queue report renders. */
+  const queueSummary = (): QueueSummary => ({
+    attempted: ["gh-1", "gh-2"],
+    fixed: ["gh-1"],
+    failed: [["gh-2", "Verification failed — new failures vs baseline: tests/x.py::test_a"]],
+    skippedDuplicate: [],
+    skippedMerged: [],
+    notAdmitted: [],
+    attachmentFailures: [],
+    prUrls: ["https://github.com/owner/name/pull/9"],
+    mergedPrs: [],
+    mergeFailures: [],
+    closeFailures: [],
+    labelFailures: [],
+    reviewSkipped: [],
+    reverted: [],
+    uncanariedMerges: [],
+    attempts: [],
+    spend: {
+      modelPasses: 3,
+      usageAvailable: true,
+      total: USAGE_A,
+      perIssue: [["gh-1", USAGE_A]],
+      shared: [["plan", USAGE_PLAN]],
+    },
+  });
+
+  it("(a) buildRunReport: JSON, 2-space indent, and the key order date → usageAvailable → modelPasses → tokens? → counts → prUrls → perIssue → sharedPasses", () => {
+    const json = buildRunReport(queueSummary(), "2026-09-30T12:00:00.000Z");
+    const parsed = JSON.parse(json);
+    expect(Object.keys(parsed)).toEqual([
+      "date",
+      "usageAvailable",
+      "modelPasses",
+      "tokens",
+      "attempted",
+      "fixed",
+      "failed",
+      "prUrls",
+      "perIssue",
+      "sharedPasses",
+    ]);
+    expect(parsed.date).toBe("2026-09-30T12:00:00.000Z");
+    expect(parsed.usageAvailable).toBe(true);
+    expect(parsed.modelPasses).toBe(3);
+    expect(parsed.tokens).toEqual(USAGE_A);
+    // counts, not id lists — the ids live in perIssue and the console report
+    expect(parsed.attempted).toBe(2);
+    expect(parsed.fixed).toBe(1);
+    expect(parsed.failed).toBe(1);
+    expect(parsed.prUrls).toEqual(["https://github.com/owner/name/pull/9"]);
+    expect(parsed.perIssue).toEqual([{ id: "gh-1", tokens: USAGE_A }]);
+    expect(parsed.sharedPasses).toEqual([{ pass: "plan", tokens: USAGE_PLAN }]);
+    // 2-space indent, per the plan-pinned shape
+    expect(json).toContain('\n  "date":');
+  });
+
+  it("(b) the honest-absence variant carries usageAvailable: false and NO tokens key (D4)", () => {
+    const summary = queueSummary();
+    const absent: QueueSummary = {
+      ...summary,
+      spend: { modelPasses: 2, usageAvailable: false, perIssue: [], shared: [] },
+    };
+    const parsed = JSON.parse(buildRunReport(absent, "2026-09-30T12:00:00.000Z"));
+    expect(Object.keys(parsed)).toEqual([
+      "date",
+      "usageAvailable",
+      "modelPasses",
+      "attempted",
+      "fixed",
+      "failed",
+      "prUrls",
+      "perIssue",
+      "sharedPasses",
+    ]);
+    expect(parsed.usageAvailable).toBe(false);
+    expect("tokens" in parsed).toBe(false);
+  });
+
+  it("(c) the best-effort write hands the spy writer the built JSON for the repoDir in both modes; the single-issue report fixes/fails and carries the same token keys", () => {
+    const writer = vi.fn();
+    const deps = { env: {}, writeRunReport: writer };
+
+    // queue mode: the exact builder output reaches the writer
+    const queueJson = buildRunReport(queueSummary(), "2026-09-30T12:00:00.000Z");
+    writeRunReportBestEffort("/tmp/repo", queueJson, deps);
+    expect(writer).toHaveBeenCalledWith("/tmp/repo", queueJson);
+
+    // single-issue mode, PR'd outcome → fixed, fix-pass count, tokens present
+    const fixedOutcome = {
+      branch: "fix/gh-1",
+      prUrl: "https://github.com/owner/name/pull/9",
+      fixPasses: 1,
+      usage: USAGE_A,
+    };
+    const fixedJson = buildSingleIssueReport("gh-1", fixedOutcome, "2026-09-30T12:00:00.000Z");
+    writeRunReportBestEffort("/tmp/repo", fixedJson, deps);
+    expect(writer).toHaveBeenLastCalledWith("/tmp/repo", fixedJson);
+    const fixedParsed = JSON.parse(fixedJson);
+    expect(Object.keys(fixedParsed)).toEqual([
+      "date",
+      "id",
+      "outcome",
+      "usageAvailable",
+      "modelPasses",
+      "tokens",
+    ]);
+    expect(fixedParsed.outcome).toBe("fixed");
+    expect(fixedParsed.modelPasses).toBe(1);
+    expect(fixedParsed.tokens).toEqual(USAGE_A);
+
+    // single-issue mode, failure outcome → failed, absent tokens stated by key absence
+    const failedParsed = JSON.parse(
+      buildSingleIssueReport(
+        "gh-1",
+        { branch: "fix/gh-1", failure: "Verification failed — repro did not pass.", fixPasses: 1 },
+        "2026-09-30T12:00:00.000Z",
+      ),
+    );
+    expect(failedParsed.outcome).toBe("failed");
+    expect(failedParsed.usageAvailable).toBe(false);
+    expect("tokens" in failedParsed).toBe(false);
+  });
+
+  it("(d) a throwing writer records RUN REPORT WRITE FAILED verbatim on console.error, throws nothing, and never touches the exit code", () => {
+    const writer = vi.fn(() => {
+      throw new Error("EACCES: permission denied, open 'last-run.json'");
+    });
+    const deps = { env: {}, writeRunReport: writer };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitBefore = process.exitCode;
+    try {
+      expect(() => writeRunReportBestEffort("/tmp/repo", "{}", deps)).not.toThrow();
+      expect(errSpy).toHaveBeenCalledWith(
+        "RUN REPORT WRITE FAILED: EACCES: permission denied, open 'last-run.json'",
+      );
+      expect(process.exitCode).toBe(exitBefore);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it("(e) the .gitignore ensure logic: absent → created with the one line; present-without → appended, content preserved; present-with → untouched", async () => {
+    const root = await mkdtemp(join(tmpdir(), "wi18-t3-"));
+    try {
+      // absent → created with exactly the one line, and the report is written
+      writeRunReportFile(root, '{"first":true}');
+      expect(readFileSync(join(root, ".loop-harness", ".gitignore"), "utf8")).toBe(
+        "last-run.json\n",
+      );
+      expect(readFileSync(join(root, ".loop-harness", "last-run.json"), "utf8")).toBe(
+        '{"first":true}',
+      );
+
+      // present WITHOUT the line → appended on its own line, original content kept
+      const withProfile = join(root, "with-profile");
+      mkdirSync(join(withProfile, ".loop-harness"), { recursive: true });
+      writeFileSync(join(withProfile, ".loop-harness", ".gitignore"), "profile.json\n");
+      writeRunReportFile(withProfile, "{}");
+      expect(readFileSync(join(withProfile, ".loop-harness", ".gitignore"), "utf8")).toBe(
+        "profile.json\nlast-run.json\n",
+      );
+
+      // a file not ending in a newline still gets the line on its own row
+      const noNewline = join(root, "no-newline");
+      mkdirSync(join(noNewline, ".loop-harness"), { recursive: true });
+      writeFileSync(join(noNewline, ".loop-harness", ".gitignore"), "profile.json");
+      writeRunReportFile(noNewline, "{}");
+      expect(readFileSync(join(noNewline, ".loop-harness", ".gitignore"), "utf8")).toBe(
+        "profile.json\nlast-run.json\n",
+      );
+
+      // present WITH the line → untouched (byte-identical), the report still
+      // overwritten per run
+      const hasLine = join(root, "has-line");
+      mkdirSync(join(hasLine, ".loop-harness"), { recursive: true });
+      const before = "profile.json\nlast-run.json\n# trailing comment\n";
+      writeFileSync(join(hasLine, ".loop-harness", ".gitignore"), before);
+      writeRunReportFile(hasLine, '{"second":true}');
+      expect(readFileSync(join(hasLine, ".loop-harness", ".gitignore"), "utf8")).toBe(before);
+      expect(readFileSync(join(hasLine, ".loop-harness", "last-run.json"), "utf8")).toBe(
+        '{"second":true}',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
