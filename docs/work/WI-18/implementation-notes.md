@@ -346,3 +346,98 @@ blocking findings.
 
 **T4 checkpoint accepted at 567436c** — both sequential reviews apply to the
 exact candidate.
+
+### T5 — docs in the same PR (2026-10-01, commit b293f8c)
+
+The final WI-18 task: name the spend ledger and `last-run.json` in the two
+docs that already describe every other harness surface, so the spend dimension
+is not an undocumented addition (CLAUDE.md's own rule: "if you add a surface,
+say so here in the same PR that adds it"). Docs-only — no code, no test, no
+command change.
+
+**Edits** — two files, +10/-3:
+- `CLAUDE.md` `src/loop.ts` module-table row: appended the WI-18 clause after
+  the WI-17 retry-surface clause. The clause covers the spend ledger
+  (`modelPasses` always; per-issue fix-attribution and shared plan/review/
+  merger ledger, re-plans summing under `plan`; token figures only when the
+  provider reported any; the D4 honest-absence posture — `usageAvailable:
+  false` with no `tokens` key, never zeros, and its byte-pinned `spend: N
+  model passes, token usage not available for this provider` sentence and
+  `tokens:` arm, in BOTH the run summary and the single-issue report; PR body
+  spend-silent) and `last-run.json` (JSON, 2-space indent, plan-pinned key
+  order `date, usageAvailable, modelPasses, tokens`-only-when-available;
+  overwritten per run on BOTH the queue and single-issue paths AFTER the
+  console report; untracked by an ensured one-line `.loop-harness/.gitignore`
+  naming `last-run.json`, created-or-appended never rewritten; written
+  best-effort so a throw is recorded as `RUN REPORT WRITE FAILED: …` through
+  the confidentiality seam and never displaces the verdict or sets
+  `process.exitCode`).
+- `CLAUDE.md` scenario paragraph: appended a sentence noting scenario 1 now
+  also asserts the spend dimension — the console absence sentence, the
+  durable file's `usageAvailable: false`/no-`tokens`-key/`modelPasses >= 1`,
+  and the `.gitignore` proven by `git check-ignore` (exit 0, path echoed) +
+  porcelain absence, "not by an untracked line an ignored file can never
+  produce" (the T4 plan-wording-divergence correction, now stated where a
+  reader looks).
+- `docs/agents/workflow.md` loop-command row: one sentence naming
+  `<target repo>/.loop-harness/last-run.json` as what every run leaves
+  behind, with the honest-absence posture. The `npm run` command list is
+  byte-identical apart from the appended sentence — no command added or
+  changed (the "command changes go here" rule is not triggered; appending a
+  non-command sentence is permitted).
+
+**Evidence — claim by claim against the landed source** (the
+plain-language-guide lesson: each claim read off the source, never off the
+prose). Verified before editing:
+- `snapshotSpend` `modelPasses: fixPassTotal + sharedPassTotal + planPasses`
+  (loop.ts:2262); re-plans accumulate into `planUsage` (loop.ts:2658); shared
+  review/merger land in `sharedUsageByName` (loop.ts:2543).
+- `usageAvailable: total !== undefined` (loop.ts:2263); `formatTokens` renders
+  all four `PassUsage` fields (loop.ts:2184); field names match
+  sandcastle-adapter.ts:70-74.
+- `buildRunReport` omits `tokens` when absent (loop.ts:2819-2821); render arms
+  at loop.ts:2765-2766 (summary), 3084-3085 / 3129-3130 (single-issue);
+  `buildPrBody` carries no spend figures (PR-body-spend-silent, D5).
+- `JSON.stringify(..., null, 2)` plan-pinned order (loop.ts:2814-2826).
+- Both write paths AFTER `console.log`: single-issue at loop.ts:3509, queue
+  `emit()` at loop.ts:3527.
+- `writeRunReportFile` create/append branches, never rewrite
+  (loop.ts:2864-2876); `writeRunReportBestEffort` routes the throw through
+  `assertNoSecrets` to `console.error`, no `process.exitCode` set
+  (loop.ts:2886-2897).
+- Scenario-1 probes: `git check-ignore` exit 0 + path echo, and
+  `not.toContain("last-run.json")` porcelain — scenario-1.test.ts:287-310.
+
+**No RED/GREEN this task** — docs-only; no behavior to drive red. The
+behavior the docs describe was proven RED→GREEN in T2 (console ledger) and
+T3/T4 (the durable file + its scenario assertion).
+
+### T5 spec review — PASS (2026-10-01, at b293f8c)
+
+Read-only reviewer verified every T5 doc claim against the landed source,
+claim by claim — all supported (the same source lines cited above). No
+blocking findings, no missing spec/plan requirements, no overstatements.
+Non-blocking observation: the phrase "ensured one-line `.loop-harness/
+.gitignore`" is slightly loose when an existing `.gitignore` is appended to
+(the ensured content is one line naming `last-run.json`, not the whole file
+being one line), but the parenthetical "(created-or-appended, never
+rewritten)" corrects it and matches source. Not a fidelity error.
+
+### T5 quality review — PASS (2026-10-01, at b293f8c)
+
+Read-only reviewer verified: the WI-18 clause matches the neighboring
+WI-clauses' density and style (semicolon-joined, parenthetical-heavy,
+byte-pinned-phrase-quoted); the scenario-paragraph sentence matches the
+paragraph's adversarial-finding/FR-011 voice; the workflow.md command list is
+byte-identical apart from the appended sentence (the "command changes go
+here" rule not triggered); the two files cross-reference correctly
+(workflow.md names the on-disk path + posture; CLAUDE.md adds implementation
+detail) — the split mirrors WI-13/WI-14. No documented-standard breach. No
+blocking findings, no MINOR/NIT. ADJACENT (not a finding): the WI-18 clause
+is the longest in an already-long row; a future ponytail pass could split the
+module table into a per-WI list, but that is out of T5's docs-only scope and
+the row is still internally navigable.
+
+**T5 checkpoint accepted at b293f8c** — both sequential reviews apply to the
+exact candidate. All five WI-18 tasks (T1–T5) are now committed and
+checkpoint-accepted.
