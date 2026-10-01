@@ -95,7 +95,19 @@ function expectFixtureClean(): void {
     cwd: FIXTURE_CLONE_DIR,
     encoding: "utf8",
   });
-  expect(status.trim()).toBe("");
+  // WI-18: `.loop-harness/` is the harness's per-run output home
+  // (`last-run.json` + its `.gitignore`), not a mutation of the fixture's
+  // tracked content. `last-run.json` is git-ignored (absent from porcelain);
+  // the untracked `.gitignore` is expected dirt on every run that wrote a
+  // report. Filtering `.loop-harness/` keeps "the fixture is unchanged" honest:
+  // the tracked tree and branches are untouched, only the output home carries
+  // per-run files (the same posture as the committed `profile.json` and the
+  // `attachments/` precedent already living in that dir).
+  const nonHarnessDirt = status
+    .split("\n")
+    .filter((line) => line.trim() !== "" && !line.includes(".loop-harness/"))
+    .join("\n");
+  expect(nonHarnessDirt).toBe("");
 }
 
 describe("the scenarios command (WI-16 T3)", () => {

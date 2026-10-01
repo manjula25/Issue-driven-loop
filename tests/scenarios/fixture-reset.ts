@@ -242,6 +242,15 @@ export function resetFixture(): void {
     cwd: FIXTURE_CLONE_DIR,
   });
   run("discard untracked debris", "git", ["clean", "-fdq"], undefined, { cwd: FIXTURE_CLONE_DIR });
+  // WI-18: also discard the per-run report's `last-run.json`, which the clean
+  // above skips (it is git-ignored by `.loop-harness/.gitignore` at pass-start)
+  // but which must not survive a reset — that same clean removes the
+  // `.gitignore` (it is untracked), which would un-ignore `last-run.json` and
+  // surface it as untracked dirt at step 8's clean assertion. Removed BY NAME
+  // so the harness's tracked onboarding output `.loop-harness/profile.json`
+  // (committed in the fixture) is never touched, and a no-prior-run reset is a
+  // no-op (`force: true`), not an error.
+  rmSync(join(FIXTURE_CLONE_DIR, ".loop-harness", "last-run.json"), { force: true });
 
   // 3b. (WI-17 T3) Remove scenario 4's seed marker BY NAME when present —
   //     BEFORE the tree convergence below, so this genuinely fires whenever a

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -14,6 +14,8 @@ import {
   buildFixPrompt,
   buildPrBody,
   buildReviewPrompt,
+  buildRunReport,
+  buildSingleIssueReport,
   fixBranch,
   formatSingleIssueResult,
   formatSummary,
@@ -26,8 +28,11 @@ import {
   runQueue,
   runSingleIssue,
   syncMainToOrigin,
+  writeRunReportBestEffort,
+  writeRunReportFile,
   type OverrideOutcome,
   type ProjectProfile,
+  type QueueSummary,
 } from "./loop.js";
 import {
   REVIEW_BRANCH,
@@ -35,6 +40,7 @@ import {
   type AgentSpec,
   type FixRunOutcome,
   type FixSandboxHandle,
+  type PassUsage,
 } from "./sandcastle-adapter.js";
 import type { NormalizedIssue } from "./issues.js";
 
@@ -129,6 +135,11 @@ function trackedCanary(suiteOutput: string, installExit = 0): {
 
 interface DepOverrides {
   fixOutcome?: FixRunOutcome;
+  /**
+   * WI-18 T2: token usage every runFixRun call reports — absent (the default)
+   * models a provider that reports none, the honest-absence path (D4).
+   */
+  fixUsage?: PassUsage;
   /** Verification (second) sandbox; the preflight sandbox defaults to a matching baseline. */
   sandbox?: FixSandboxHandle;
   /**
@@ -206,7 +217,10 @@ function makeDeps(overrides: DepOverrides = {}) {
   let mergerRan = false;
   return {
     env,
-    runFixRun: vi.fn(async (_input: { branch: string; prompt: string }) => overrides.fixOutcome ?? fixOutcome()),
+    runFixRun: vi.fn(async (_input: { branch: string; prompt: string }) => ({
+      ...(overrides.fixOutcome ?? fixOutcome()),
+      ...(overrides.fixUsage !== undefined ? { usage: overrides.fixUsage } : {}),
+    })),
     createFixSandbox: vi.fn(async (input: { branch: string }) => {
       // The canary sandbox is distinguished by its branch (loop/canary-<id>),
       // not by call order — the preflight (loop/preflight-<id>) also forks
@@ -311,7 +325,9 @@ function makeDeps(overrides: DepOverrides = {}) {
       if (overrides.reviewThrows !== undefined) {
         throw new Error(overrides.reviewThrows);
       }
-      return overrides.reviewStdout ?? `<review>${overrides.reviewVerdict ?? "approve"}</review>`;
+      return {
+        stdout: overrides.reviewStdout ?? `<review>${overrides.reviewVerdict ?? "approve"}</review>`,
+      };
     }),
     pathCommittedOnBranch: overrides.pathCommittedOnBranch ?? (async () => false),
     // WI-13 T8 seams (FR-007/FR-008): the read-only conflict probe + the
@@ -331,6 +347,10 @@ function makeDeps(overrides: DepOverrides = {}) {
         throw new Error(overrides.pushThrows);
       }
     }),
+    // WI-18 T3 seam: the durable run report — never called by the loop itself
+    // (main() owns the wiring, scenarios cover it); the no-op keeps the
+    // LoopDeps shape complete.
+    writeRunReport: vi.fn(),
   };
 }
 
@@ -514,13 +534,16 @@ describe("runSingleIssue auto-merge (WI-6 T3, FR-003/FR-004 wiring)", () => {
     expect(body.body).not.toContain("A human reviews and merges this");
   });
 
-  it("opted-out (no autoMerge in profile): mergePr NEVER called; outcome shape identical to today's", async () => {
+  it("opted-out (no autoMerge in profile): mergePr NEVER called; outcome shape identical to today's (plus the WI-18 fixPasses spend field)", async () => {
     const deps = makeDeps();
     const outcome = await run(deps, profile);
     expect(deps.mergePr).not.toHaveBeenCalled();
     expect(outcome).toEqual({
       branch: "fix/gh-1",
       prUrl: "https://github.com/manjula25/loop-fixtures-py/pull/9",
+      // WI-18 (D2, T2 quality fix): the explicit fix-pass count rides every
+      // fix-loop outcome — spend accounting no longer infers it.
+      fixPasses: 1,
     });
     // and the body keeps today's human-review closing (pinned in buildPrBody tests)
     const body = deps.createPr.mock.calls[0]![0] as { body: string };
@@ -1674,6 +1697,16 @@ interface QueueDepsConfig {
   /** Id whose verification sandbox fails the reproduction test (issue-level failure). */
   failReproFor?: string;
   /**
+   * WI-18 T2: token usage every agent pass reports — fix attempts, planner
+   * calls, the review pass, the merger pass. Absent (the default) models a
+   * provider that reports none (the scripted scenario agent, non-Claude
+   * providers) — the honest-absence path (D4).
+   */
+  fixUsage?: PassUsage;
+  planUsage?: PassUsage;
+  reviewUsage?: PassUsage;
+  mergerUsage?: PassUsage;
+  /**
    * WI-17 T2: the id whose FIRST verification sandbox is red (repro fails) and
    * whose later ones go green — the red-then-green knob the retry tests need;
    * `failReproFor` stays the always-red knob.
@@ -1779,7 +1812,12 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       // T6b (quality Minor 4): no `active` write here — every read of the
       // shared `active` sits inside createFixSandbox, which overwrites it at
       // entry before reading, so a mid-lane write was vestigial.
-      return { stdout: agentStdout(), commits: [{ sha: "abc" }], branch: input.branch };
+      return {
+        stdout: agentStdout(),
+        commits: [{ sha: "abc" }],
+        branch: input.branch,
+        ...(config.fixUsage !== undefined ? { usage: config.fixUsage } : {}),
+      };
     }),
     createFixSandbox: vi.fn(async (input: { branch: string; baseBranch?: string }) => {
       openNow += 1;
@@ -1901,7 +1939,10 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       if (config.reviewThrows !== undefined) {
         throw new Error(config.reviewThrows);
       }
-      return config.reviewStdout ?? `<review>${config.reviewVerdict ?? "approve"}</review>`;
+      return {
+        stdout: config.reviewStdout ?? `<review>${config.reviewVerdict ?? "approve"}</review>`,
+        ...(config.reviewUsage !== undefined ? { usage: config.reviewUsage } : {}),
+      };
     }),
     // QueueDeps
     // WI-14 T1: a configured issue carrying a url keeps it through acquisition
@@ -1929,12 +1970,15 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
           ? config.rePlanStdout
           : config.planStdout;
       if (stdout !== undefined) {
-        return stdout;
+        return { stdout, ...(config.planUsage !== undefined ? { usage: config.planUsage } : {}) };
       }
       // Equal priorities for every configured issue: a usable plan whose
       // ordering is the deterministic ascending-number tie rule.
       const priority = Object.fromEntries(issues.map((i) => [i.id, 3]));
-      return `<plan>${JSON.stringify({ priority, blockedBy: {} })}</plan>`;
+      return {
+        stdout: `<plan>${JSON.stringify({ priority, blockedBy: {} })}</plan>`,
+        ...(config.planUsage !== undefined ? { usage: config.planUsage } : {}),
+      };
     }),
     pathCommittedOnBranch: vi.fn(async () => config.pathCommittedOnBranch === true),
     // WI-13 T8 seams (FR-007/FR-008): the read-only conflict probe + the
@@ -1951,7 +1995,11 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
       if (config.mergerThrows !== undefined) {
         throw new Error(config.mergerThrows);
       }
-      return { stdout: "merger resolution summary", commits: [{ sha: "m3rg3c0m" }] };
+      return {
+        stdout: "merger resolution summary",
+        commits: [{ sha: "m3rg3c0m" }],
+        ...(config.mergerUsage !== undefined ? { usage: config.mergerUsage } : {}),
+      };
     }),
     // WI-13 T12 seam (FR-007/FR-008): publish the merger-resolved branch —
     // can be made to refuse per id. Defaults: succeeds, unused without a conflict.
@@ -1960,6 +2008,8 @@ function makeQueueDeps(config: QueueDepsConfig = {}) {
         throw new Error("git: push rejected — non-fast-forward");
       }
     }),
+    // WI-18 T3 seam: the durable run report — never called by runQueue itself.
+    writeRunReport: vi.fn(),
   };
   return { deps, maxOpen: () => maxOpen };
 }
@@ -2502,7 +2552,7 @@ describe("wave-runner (WI-13 T6, FR-002/FR-003/FR-004/FR-006)", () => {
         if (reviews === 1) {
           await Promise.race([secondReviewStarted, new Promise((resolve) => setTimeout(resolve, 100))]);
         }
-        return "<review>approve</review>";
+        return { stdout: "<review>approve</review>" };
       }),
     );
     deps.mergePr.mockImplementation(track(deps.mergePr.getMockImplementation()!));
@@ -2915,7 +2965,7 @@ describe("formatSingleIssueResult (WI-8, FR-002)", () => {
     expect(report.exitCode).toBe(0);
   });
 
-  it("(ii) a PR'd outcome WITHOUT teardownFailure: stderr empty, stdout byte-identical to the pre-WI-8 shape — no teardown line anywhere", () => {
+  it("(ii) a PR'd outcome WITHOUT teardownFailure: stderr empty, stdout is the PR line plus the always-rendered WI-18 spend sentence — no teardown line anywhere", () => {
     const result: OverrideOutcome = {
       kind: "run",
       outcome: { branch: "fix/gh-1", prUrl: PR_URL },
@@ -2924,7 +2974,12 @@ describe("formatSingleIssueResult (WI-8, FR-002)", () => {
     const report = formatSingleIssueResult(result);
 
     expect(report.stderr).toEqual([]);
-    expect(report.stdout).toEqual([`PR opened: ${PR_URL}`]);
+    // WI-18 (D3/T2) superseded the pre-WI-8 byte-identical pin: the spend
+    // sentence now ALWAYS renders (absence arm — the literal carries no usage).
+    expect(report.stdout).toEqual([
+      `PR opened: ${PR_URL}`,
+      "spend: 1 model passes, token usage not available for this provider",
+    ]);
     expect(report.stdout.join("\n")).not.toContain("sandbox teardown failed");
     expect(report.stderr.join("\n")).not.toContain("sandbox teardown failed");
     expect(report.exitCode).toBe(0);
@@ -2944,6 +2999,9 @@ describe("formatSingleIssueResult (WI-8, FR-002)", () => {
 
     expect(report.stderr).toEqual([
       "Loop finished without a PR — REVERTED gh-1: canary red — test_zero_contract",
+      // WI-18 (D3/T2): the spend sentence ALWAYS renders on this arm too,
+      // directly after the attempts slot and before the teardown line.
+      "spend: 1 model passes, token usage not available for this provider",
       `sandbox teardown failed: ${TEARDOWN}`,
     ]);
     expect(report.exitCode).toBe(1);
@@ -4132,6 +4190,432 @@ describe("attempt visibility in the records (WI-17 T2, D5)", () => {
     const defaultSummary = await runQueue(queueRunInput(), singleAttemptDeps);
     expect(defaultSummary.attempts).toEqual([]);
     expect(formatSummary(defaultSummary)).not.toContain("attempts:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WI-18 T2: the spend ledger — per-issue, shared-pass, and run-total token
+// figures in the console report, with the honest-absence posture (D4: a
+// provider that reports no usage is stated, never faked as zeros). Raw
+// integers, no separators (D1's no-formatting posture); the PR body stays
+// spend-silent (D5).
+// ---------------------------------------------------------------------------
+
+describe("spend ledger (WI-18 T2, D2/D4)", () => {
+  const USAGE_A: PassUsage = {
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheCreationInputTokens: 5,
+    cacheReadInputTokens: 10,
+  };
+  const USAGE_PLAN: PassUsage = {
+    inputTokens: 30,
+    outputTokens: 6,
+    cacheCreationInputTokens: 1,
+    cacheReadInputTokens: 3,
+  };
+  const USAGE_REVIEW: PassUsage = {
+    inputTokens: 15,
+    outputTokens: 3,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 2,
+  };
+  const USAGE_MERGER: PassUsage = {
+    inputTokens: 25,
+    outputTokens: 4,
+    cacheCreationInputTokens: 2,
+    cacheReadInputTokens: 1,
+  };
+
+  it("(a) a two-issue run with usage renders per-issue token lines, the shared plan line, and the run total — the sum of every reported figure", async () => {
+    const { deps } = makeQueueDeps({
+      issues: [queueIssue(1), queueIssue(2)],
+      fixUsage: USAGE_A,
+      planUsage: USAGE_PLAN,
+    });
+
+    const summary = await runQueue(queueRunInput(), deps);
+
+    // per-issue: each lane spent one fix pass reporting USAGE_A
+    const text = formatSummary(summary);
+    expect(text).toContain("gh-1: tokens: 100 in / 20 out / 5 cache-write / 10 cache-read");
+    expect(text).toContain("gh-2: tokens: 100 in / 20 out / 5 cache-write / 10 cache-read");
+    // shared: one planner pass (2 eligible issues → the planner is always on)
+    expect(text).toContain("plan tokens: 30 in / 6 out / 1 cache-write / 3 cache-read");
+    // total: 2 fix passes + 1 plan pass, tokens summed across all three
+    expect(text).toContain("spend: 3 model passes, tokens: 230 in / 46 out / 11 cache-write / 23 cache-read");
+    expect(summary.spend?.usageAvailable).toBe(true);
+    expect(summary.spend?.modelPasses).toBe(3);
+  });
+
+  it("(b) a no-usage run states absence honestly: pass count with the not-available sentence, no token line anywhere (D4)", async () => {
+    const { deps } = makeQueueDeps({ issues: [queueIssue(1), queueIssue(2)] });
+
+    const summary = await runQueue(queueRunInput(), deps);
+
+    const text = formatSummary(summary);
+    expect(text).toContain("spend: 3 model passes, token usage not available for this provider");
+    expect(summary.spend?.usageAvailable).toBe(false);
+    expect(summary.spend?.total).toBeUndefined();
+    expect(summary.spend?.perIssue).toEqual([]);
+    expect(summary.spend?.shared).toEqual([]);
+    // absence is stated, never faked: no token figure line renders at all
+    expect(text.split("\n").some((line) => line.includes("tokens:"))).toBe(false);
+  });
+
+  it("(c) attempts and tokens co-render: a retried lane carries both `gh-1: attempts: 2` and the per-issue SUM of its two attempts' usage", async () => {
+    const { deps } = makeQueueDeps({
+      issues: [queueIssue(1)],
+      failFirstVerificationFor: "gh-1",
+      fixUsage: USAGE_A,
+    });
+
+    const summary = await runQueue(queueRunInput({ maxAttempts: 2 }), deps);
+
+    const text = formatSummary(summary);
+    expect(text).toContain("gh-1: attempts: 2");
+    expect(text).toContain("gh-1: tokens: 200 in / 40 out / 10 cache-write / 20 cache-read");
+    // one lane, one issue → no planner pass; both attempts spent and counted
+    expect(text).toContain("spend: 2 model passes, tokens: 200 in / 40 out / 10 cache-write / 20 cache-read");
+  });
+
+  it("(d) the single-issue report carries the spend sentence on both arms — tokens when the provider reported them, the not-available string when it did not", async () => {
+    // PR arm with usage: 1 attempt, tokens rendered.
+    const greenDeps = makeDeps({ fixUsage: USAGE_A });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      greenDeps,
+    );
+    const report = formatSingleIssueResult({ kind: "run", outcome });
+    expect(report.stdout.join("\n")).toContain("PR opened:");
+    expect(report.stdout.join("\n")).toContain(
+      "spend: 1 model passes, tokens: 100 in / 20 out / 5 cache-write / 10 cache-read",
+    );
+
+    // failure arm without usage: pass count still stated, absence stated (D4).
+    const redDeps = makeDeps({ sandbox: sandboxHandle(SUITE_AFTER_FIX, /* reproExit */ 1) });
+    const redOutcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      redDeps,
+    );
+    const redReport = formatSingleIssueResult({ kind: "run", outcome: redOutcome });
+    expect(redReport.exitCode).toBe(1);
+    expect(redReport.stderr.join("\n")).toContain(
+      "spend: 1 model passes, token usage not available for this provider",
+    );
+  });
+
+  it("(e) the PR body stays spend-silent (D5): a usage-carrying run opens a PR whose body has no token figure", async () => {
+    const deps = makeDeps({ fixUsage: USAGE_A });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      deps,
+    );
+    expect(outcome.prUrl).toContain("/pull/");
+    const body = (deps.createPr.mock.calls[0]![0] as { body: string }).body;
+    expect(body).not.toContain("tokens:");
+    expect(body).not.toContain("model passes");
+  });
+
+  it("(f) the re-plan pass sums into the same `plan` entry (D2: re-plans are planner spend too)", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { deps } = makeQueueDeps({
+        issues: [queueIssue(1), queueIssue(2)],
+        planStdout: '<plan>{"priority":{"gh-1":3,"gh-2":3},"blockedBy":{"gh-2":["gh-1"]}}</plan>',
+        planUsage: USAGE_PLAN,
+      });
+
+      const summary = await runQueue(queueRunInput({ profile: { ...profile, autoMerge: true } }), deps);
+
+      // the initial plan + exactly one post-merge re-plan (FR-006)
+      expect(deps.runPlan).toHaveBeenCalledTimes(2);
+      const text = formatSummary(summary);
+      expect(text).toContain("plan tokens: 60 in / 12 out / 2 cache-write / 6 cache-read");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("(g) opted-in shared passes render their own lines: review and merger token figures beside the planner's, counted in the run total", async () => {
+    const { deps } = makeQueueDeps({
+      issues: [queueIssue(1)],
+      fixUsage: USAGE_A,
+      reviewUsage: USAGE_REVIEW,
+      mergerUsage: USAGE_MERGER,
+      conflictFor: "gh-1",
+    });
+
+    const summary = await runQueue(queueRunInput({ profile: { ...profile, autoMerge: true } }), deps);
+
+    const text = formatSummary(summary);
+    expect(text).toContain("review tokens: 15 in / 3 out / 0 cache-write / 2 cache-read");
+    expect(text).toContain("merger tokens: 25 in / 4 out / 2 cache-write / 1 cache-read");
+    // 1 fix + 1 review + 1 merger = 3 model passes; total = A + review + merger
+    expect(text).toContain(
+      "spend: 3 model passes, tokens: 140 in / 27 out / 7 cache-write / 13 cache-read",
+    );
+  });
+
+  it("(h) a pre-fix abort bills ZERO fix passes (T2 quality fix): the report never claims spend for a pass that never started", async () => {
+    // Single issue: the stale-baseline preflight aborts before the fix loop.
+    const deps = makeDeps({ staleBaseline: true });
+    const outcome = await runSingleIssue(
+      { issue, repoDir: "/tmp/repo", imageName: "sandcastle-loop", agent, profile },
+      deps,
+    );
+    expect(deps.runFixRun).not.toHaveBeenCalled();
+    expect(outcome.failure).toContain("Aborted before the fix run");
+    const report = formatSingleIssueResult({ kind: "run", outcome });
+    expect(report.stderr.join("\n")).toContain(
+      "spend: 0 model passes, token usage not available for this provider",
+    );
+    expect(report.stderr.join("\n")).not.toContain("spend: 1 model passes");
+
+    // Queue mode: the aborting snapshot's run ledger carries the same zero —
+    // no planner pass either (one issue never triggers the planner).
+    const queue = makeQueueDeps({ issues: [queueIssue(1)], staleBaseline: true });
+    const error = await runQueue(queueRunInput({}), queue.deps).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(QueueAbortedError);
+    expect((error as QueueAbortedError).summary.spend?.modelPasses).toBe(0);
+  });
+
+  it("(i) shared passes COUNT even when the provider reports no usage, and a thrown merger run still counts its pass (T2 quality MINOR)", async () => {
+    // No usage knobs at all — the D4 absence arm. The passes still count:
+    // 1 fix + 1 review + 1 merger = 3.
+    const { deps } = makeQueueDeps({ issues: [queueIssue(1)], conflictFor: "gh-1" });
+    const summary = await runQueue(queueRunInput({ profile: { ...profile, autoMerge: true } }), deps);
+    expect(summary.spend?.modelPasses).toBe(3);
+    expect(summary.spend?.usageAvailable).toBe(false);
+    expect(formatSummary(summary)).toContain(
+      "spend: 3 model passes, token usage not available for this provider",
+    );
+
+    // A merger run that THROWS after `mergerPassRan` latched still counts:
+    // the gate fails open-PR (no review runs after it), so 1 fix + 1 merger.
+    const throwing = makeQueueDeps({
+      issues: [queueIssue(1)],
+      conflictFor: "gh-1",
+      mergerThrows: "sandcastle: merger run failed — budget exceeded",
+    });
+    const thrownSummary = await runQueue(
+      queueRunInput({ profile: { ...profile, autoMerge: true } }),
+      throwing.deps,
+    );
+    expect(thrownSummary.spend?.modelPasses).toBe(2);
+    expect(thrownSummary.spend?.usageAvailable).toBe(false);
+  });
+});
+
+// WI-18 T3: last-run.json — the durable report written to the target repo's
+// `.loop-harness/`, overwritten per run, untracked by its own ensured
+// `.gitignore` line. Same honest-absence posture as the console report (D4:
+// `usageAvailable: false` with NO `tokens` key, never zeros).
+// ---------------------------------------------------------------------------
+
+describe("run report (WI-18 T3)", () => {
+  const USAGE_A: PassUsage = {
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheCreationInputTokens: 5,
+    cacheReadInputTokens: 10,
+  };
+  const USAGE_PLAN: PassUsage = {
+    inputTokens: 30,
+    outputTokens: 6,
+    cacheCreationInputTokens: 1,
+    cacheReadInputTokens: 3,
+  };
+
+  /** A hand-built summary exercising every key the queue report renders. */
+  const queueSummary = (): QueueSummary => ({
+    attempted: ["gh-1", "gh-2"],
+    fixed: ["gh-1"],
+    failed: [["gh-2", "Verification failed — new failures vs baseline: tests/x.py::test_a"]],
+    skippedDuplicate: [],
+    skippedMerged: [],
+    notAdmitted: [],
+    attachmentFailures: [],
+    prUrls: ["https://github.com/owner/name/pull/9"],
+    mergedPrs: [],
+    mergeFailures: [],
+    closeFailures: [],
+    labelFailures: [],
+    reviewSkipped: [],
+    reverted: [],
+    uncanariedMerges: [],
+    attempts: [],
+    spend: {
+      modelPasses: 3,
+      usageAvailable: true,
+      total: USAGE_A,
+      perIssue: [["gh-1", USAGE_A]],
+      shared: [["plan", USAGE_PLAN]],
+    },
+  });
+
+  it("(a) buildRunReport: JSON, 2-space indent, and the key order date → usageAvailable → modelPasses → tokens? → counts → prUrls → perIssue → sharedPasses", () => {
+    const json = buildRunReport(queueSummary(), "2026-09-30T12:00:00.000Z");
+    const parsed = JSON.parse(json);
+    expect(Object.keys(parsed)).toEqual([
+      "date",
+      "usageAvailable",
+      "modelPasses",
+      "tokens",
+      "attempted",
+      "fixed",
+      "failed",
+      "prUrls",
+      "perIssue",
+      "sharedPasses",
+    ]);
+    expect(parsed.date).toBe("2026-09-30T12:00:00.000Z");
+    expect(parsed.usageAvailable).toBe(true);
+    expect(parsed.modelPasses).toBe(3);
+    expect(parsed.tokens).toEqual(USAGE_A);
+    // counts, not id lists — the ids live in perIssue and the console report
+    expect(parsed.attempted).toBe(2);
+    expect(parsed.fixed).toBe(1);
+    expect(parsed.failed).toBe(1);
+    expect(parsed.prUrls).toEqual(["https://github.com/owner/name/pull/9"]);
+    expect(parsed.perIssue).toEqual([{ id: "gh-1", tokens: USAGE_A }]);
+    expect(parsed.sharedPasses).toEqual([{ pass: "plan", tokens: USAGE_PLAN }]);
+    // 2-space indent, per the plan-pinned shape
+    expect(json).toContain('\n  "date":');
+  });
+
+  it("(b) the honest-absence variant carries usageAvailable: false and NO tokens key (D4)", () => {
+    const summary = queueSummary();
+    const absent: QueueSummary = {
+      ...summary,
+      spend: { modelPasses: 2, usageAvailable: false, perIssue: [], shared: [] },
+    };
+    const parsed = JSON.parse(buildRunReport(absent, "2026-09-30T12:00:00.000Z"));
+    expect(Object.keys(parsed)).toEqual([
+      "date",
+      "usageAvailable",
+      "modelPasses",
+      "attempted",
+      "fixed",
+      "failed",
+      "prUrls",
+      "perIssue",
+      "sharedPasses",
+    ]);
+    expect(parsed.usageAvailable).toBe(false);
+    expect("tokens" in parsed).toBe(false);
+  });
+
+  it("(c) the best-effort write hands the spy writer the built JSON for the repoDir in both modes; the single-issue report fixes/fails and carries the same token keys", () => {
+    const writer = vi.fn();
+    const deps = { env: {}, writeRunReport: writer };
+
+    // queue mode: the exact builder output reaches the writer
+    const queueJson = buildRunReport(queueSummary(), "2026-09-30T12:00:00.000Z");
+    writeRunReportBestEffort("/tmp/repo", queueJson, deps);
+    expect(writer).toHaveBeenCalledWith("/tmp/repo", queueJson);
+
+    // single-issue mode, PR'd outcome → fixed, fix-pass count, tokens present
+    const fixedOutcome = {
+      branch: "fix/gh-1",
+      prUrl: "https://github.com/owner/name/pull/9",
+      fixPasses: 1,
+      usage: USAGE_A,
+    };
+    const fixedJson = buildSingleIssueReport("gh-1", fixedOutcome, "2026-09-30T12:00:00.000Z");
+    writeRunReportBestEffort("/tmp/repo", fixedJson, deps);
+    expect(writer).toHaveBeenLastCalledWith("/tmp/repo", fixedJson);
+    const fixedParsed = JSON.parse(fixedJson);
+    expect(Object.keys(fixedParsed)).toEqual([
+      "date",
+      "id",
+      "outcome",
+      "usageAvailable",
+      "modelPasses",
+      "tokens",
+    ]);
+    expect(fixedParsed.outcome).toBe("fixed");
+    expect(fixedParsed.modelPasses).toBe(1);
+    expect(fixedParsed.tokens).toEqual(USAGE_A);
+
+    // single-issue mode, failure outcome → failed, absent tokens stated by key absence
+    const failedParsed = JSON.parse(
+      buildSingleIssueReport(
+        "gh-1",
+        { branch: "fix/gh-1", failure: "Verification failed — repro did not pass.", fixPasses: 1 },
+        "2026-09-30T12:00:00.000Z",
+      ),
+    );
+    expect(failedParsed.outcome).toBe("failed");
+    expect(failedParsed.usageAvailable).toBe(false);
+    expect("tokens" in failedParsed).toBe(false);
+  });
+
+  it("(d) a throwing writer records RUN REPORT WRITE FAILED verbatim on console.error, throws nothing, and never touches the exit code", () => {
+    const writer = vi.fn(() => {
+      throw new Error("EACCES: permission denied, open 'last-run.json'");
+    });
+    const deps = { env: {}, writeRunReport: writer };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitBefore = process.exitCode;
+    try {
+      expect(() => writeRunReportBestEffort("/tmp/repo", "{}", deps)).not.toThrow();
+      expect(errSpy).toHaveBeenCalledWith(
+        "RUN REPORT WRITE FAILED: EACCES: permission denied, open 'last-run.json'",
+      );
+      expect(process.exitCode).toBe(exitBefore);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it("(e) the .gitignore ensure logic: absent → created with the one line; present-without → appended, content preserved; present-with → untouched", async () => {
+    const root = await mkdtemp(join(tmpdir(), "wi18-t3-"));
+    try {
+      // absent → created with exactly the one line, and the report is written
+      writeRunReportFile(root, '{"first":true}');
+      expect(readFileSync(join(root, ".loop-harness", ".gitignore"), "utf8")).toBe(
+        "last-run.json\n",
+      );
+      expect(readFileSync(join(root, ".loop-harness", "last-run.json"), "utf8")).toBe(
+        '{"first":true}',
+      );
+
+      // present WITHOUT the line → appended on its own line, original content kept
+      const withProfile = join(root, "with-profile");
+      mkdirSync(join(withProfile, ".loop-harness"), { recursive: true });
+      writeFileSync(join(withProfile, ".loop-harness", ".gitignore"), "profile.json\n");
+      writeRunReportFile(withProfile, "{}");
+      expect(readFileSync(join(withProfile, ".loop-harness", ".gitignore"), "utf8")).toBe(
+        "profile.json\nlast-run.json\n",
+      );
+
+      // a file not ending in a newline still gets the line on its own row
+      const noNewline = join(root, "no-newline");
+      mkdirSync(join(noNewline, ".loop-harness"), { recursive: true });
+      writeFileSync(join(noNewline, ".loop-harness", ".gitignore"), "profile.json");
+      writeRunReportFile(noNewline, "{}");
+      expect(readFileSync(join(noNewline, ".loop-harness", ".gitignore"), "utf8")).toBe(
+        "profile.json\nlast-run.json\n",
+      );
+
+      // present WITH the line → untouched (byte-identical), the report still
+      // overwritten per run
+      const hasLine = join(root, "has-line");
+      mkdirSync(join(hasLine, ".loop-harness"), { recursive: true });
+      const before = "profile.json\nlast-run.json\n# trailing comment\n";
+      writeFileSync(join(hasLine, ".loop-harness", ".gitignore"), before);
+      writeRunReportFile(hasLine, '{"second":true}');
+      expect(readFileSync(join(hasLine, ".loop-harness", ".gitignore"), "utf8")).toBe(before);
+      expect(readFileSync(join(hasLine, ".loop-harness", "last-run.json"), "utf8")).toBe(
+        '{"second":true}',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

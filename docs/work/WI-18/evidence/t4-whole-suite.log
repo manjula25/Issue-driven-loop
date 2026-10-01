@@ -1,0 +1,99 @@
+
+> software-factory-loop@0.0.0 test:scenarios
+> vitest run --config vitest.scenarios.config.ts
+
+
+ RUN  v5.0.0 /home/bitcot/Documents/projects/software-factory-loop/.claude/worktrees/wi-18
+
+To https://github.com/manjula25/loop-integration-fixture.git
+   b1a05d6..74f8e4e  main -> main
+ ❯ tests/scenarios/scenario-3.test.ts (2 tests | 1 failed) 634198ms
+   ❯ scenario 3 — a stale profile aborts before the fix run (WI-16 T6) (2)
+     × a stale baseline aborts before the fix run, naming re-onboarding 190647ms
+ ❯ tests/scenarios/scenario-1.test.ts (2 tests | 1 failed) 1168443ms
+   ❯ scenario 1 — reproduce-then-fix, end to end (WI-16 T4) (2)
+     × the queue path fixes gh-1: repro test committed, PR merged, canary green 175067ms
+ ❯ tests/scenarios/scenario-4.test.ts (1 test | 1 failed) 190125ms
+   ❯ scenario 4 — the bounded retry loop, fixable-green end to end (WI-17 T3) (1)
+     × attempt 1 fails verification honestly; the retry lands the fix: merged, canary green, attempts: 2 190124ms
+remote: 
+remote: Create a pull request for 't3/hand-mutation' on GitHub by visiting:        
+remote:      https://github.com/manjula25/loop-integration-fixture/pull/new/t3/hand-mutation        
+remote: 
+ ❯ tests/scenarios/command.test.ts (4 tests | 1 failed) 830246ms
+   ❯ the scenarios command (WI-16 T3) (4)
+     × smallest real invocation: the loop finds no eligible issue and the fixture is unchanged 347889ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/scenarios/command.test.ts > the scenarios command (WI-16 T3) > smallest real invocation: the loop finds no eligible issue and the fixture is unchanged
+AssertionError: expected '?? .loop-harness/.gitignore' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ ?? .loop-harness/.gitignore
+
+ ❯ expectFixtureClean tests/scenarios/command.test.ts:98:25
+     96|     encoding: "utf8",
+     97|   });
+     98|   expect(status.trim()).toBe("");
+       |                         ^
+     99| }
+    100|
+ ❯ tests/scenarios/command.test.ts:244:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/scenarios/scenario-1.test.ts > scenario 1 — reproduce-then-fix, end to end (WI-16 T4) > the queue path fixes gh-1: repro test committed, PR merged, canary green
+FixtureResetError: scenarios fixture machinery failed at step "verify working tree": not clean:
+?? .loop-harness/last-run.json
+
+ ❯ resetFixture tests/scenarios/fixture-reset.ts:435:11
+    433|   });
+    434|   if (status.trim() !== "") {
+    435|     throw new FixtureResetError("verify working tree", `not clean:\n${…
+       |           ^
+    436|   }
+    437| }
+ ❯ tests/scenarios/scenario-1.test.ts:235:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/scenarios/scenario-3.test.ts > scenario 3 — a stale profile aborts before the fix run (WI-16 T6) > a stale baseline aborts before the fix run, naming re-onboarding
+FixtureResetError: scenarios fixture machinery failed at step "verify working tree": not clean:
+?? .loop-harness/last-run.json
+
+ ❯ resetFixture tests/scenarios/fixture-reset.ts:435:11
+    433|   });
+    434|   if (status.trim() !== "") {
+    435|     throw new FixtureResetError("verify working tree", `not clean:\n${…
+       |           ^
+    436|   }
+    437| }
+ ❯ tests/scenarios/scenario-3.test.ts:239:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/scenarios/scenario-4.test.ts > scenario 4 — the bounded retry loop, fixable-green end to end (WI-17 T3) > attempt 1 fails verification honestly; the retry lands the fix: merged, canary green, attempts: 2
+FixtureResetError: scenarios fixture machinery failed at step "verify working tree": not clean:
+?? .loop-harness/last-run.json
+
+ ❯ resetFixture tests/scenarios/fixture-reset.ts:435:11
+    433|   });
+    434|   if (status.trim() !== "") {
+    435|     throw new FixtureResetError("verify working tree", `not clean:\n${…
+       |           ^
+    436|   }
+    437| }
+ ❯ tests/scenarios/scenario-4.test.ts:273:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  4 failed | 1 passed (5)
+      Tests  4 failed | 8 passed (12)
+   Start at  10:53:24
+   Duration  2911.43s (tests 100%)
+
+SUITE_RC=1

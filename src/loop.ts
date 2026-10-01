@@ -5,7 +5,7 @@
  * gate is `diffVerification` on output from a sandbox the agent never touched.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   assertClearedForAttachments,
@@ -32,7 +32,9 @@ import {
   runMerger,
   runPlan,
   runReview,
+  sumPassUsage,
   type AgentSpec,
+  type PassUsage,
   type PlanRunInput,
 } from "./sandcastle-adapter.js";
 import { diffVerification, parsePytestFailures, SUITE_SUMMARY_RE } from "./verify.js";
@@ -109,7 +111,7 @@ export interface LoopDeps {
     branch: string;
     name?: string;
     copyToWorktree?: readonly string[];
-  }): Promise<{ stdout: string; commits: readonly { sha: string }[]; branch: string }>;
+  }): Promise<{ stdout: string; commits: readonly { sha: string }[]; branch: string; usage?: PassUsage }>;
   createFixSandbox(input: {
     cwd: string;
     branch: string;
@@ -146,7 +148,7 @@ export interface LoopDeps {
    * secrets-guards it before the call, and deletes the branch afterwards. A
    * thrown run maps to the `uncertain` verdict class at the call site.
    */
-  runReview(input: PlanRunInput & { readonly diff: string }): Promise<string>;
+  runReview(input: PlanRunInput & { readonly diff: string }): Promise<{ stdout: string; usage?: PassUsage }>;
   /**
    * WI-13 T8 (FR-007): whether merging `branch` into the CURRENT main would
    * conflict — a read-only probe (real wiring: `git merge-tree --write-tree`,
@@ -165,7 +167,7 @@ export interface LoopDeps {
    */
   runMerger(
     input: PlanRunInput & { readonly branch: string; readonly mainRef: string },
-  ): Promise<{ stdout: string; commits: readonly { sha: string }[] }>;
+  ): Promise<{ stdout: string; commits: readonly { sha: string }[]; usage?: PassUsage }>;
   /**
    * WI-13 T12 (FR-007/FR-008): push `branch` to origin (`git push origin
    * <branch>`). Called only on the verified-merger gate's green path, to
@@ -239,6 +241,13 @@ export interface LoopDeps {
    * by vitest — correctness is code review plus the recorded probes.
    */
   readIssueLabels(repoDir: string, issue: NormalizedIssue): Promise<readonly string[]>;
+  /**
+   * WI-18 (T3): write the durable run report JSON to `<repoDir>/.loop-harness/
+   * last-run.json` (real wiring: `writeRunReportFile`). Called by `main()` on
+   * BOTH paths AFTER the console report, always through
+   * `writeRunReportBestEffort` — a throw is recorded, never fatal.
+   */
+  writeRunReport(repoDir: string, json: string): void;
 }
 
 export interface SingleIssueInput {
@@ -279,6 +288,37 @@ export interface LoopOutcome {
    * reviewer judges the diff, not the journey).
    */
   readonly attempts?: number;
+  /**
+   * WI-18 (D2, T2 quality fix 2026-09-30): the lane's fix-pass COUNT for spend
+   * accounting — `attempt` from the fix loop, explicitly `0` on the pre-fix
+   * abort arms (confidentiality refusal, nesting guard, stale-baseline
+   * preflight) where NO fix pass ran. Without it, `attempts ?? 1` bills a
+   * phantom pass on those arms — a report saying "Aborted before the fix run"
+   * while claiming one model pass spent. Distinct from `attempts` (a WI-17
+   * rendering figure, set only when > 1); absent only on pre-WI-18 hand-built
+   * literals, which the spend counters fall back to `attempts ?? 1` for.
+   */
+  readonly fixPasses?: number;
+  /**
+   * WI-18 (D2): the lane's fix-attempt token usage, summed across every
+   * attempt that reported any — absent when NO attempt did (the honest
+   * absence signal, D4: a provider that reports no usage is stated, never
+   * faked as zeros). Unlike `attempts`, present on single-attempt runs —
+   * the token figure is not conditional on the count.
+   */
+  readonly usage?: PassUsage;
+  /**
+   * WI-18 (D2): token usage of the SHARED passes the lane spent (the
+   * pre-merge review, the merger), as [passName, usage] entries for the
+   * run-level shared ledger. Absent when no shared pass reported usage.
+   */
+  readonly sharedUsage?: readonly (readonly [string, PassUsage])[];
+  /**
+   * WI-18 (D2): how many shared model passes (review/merger) the lane spent —
+   * counted even when the provider reports no usage, so the run's
+   * `modelPasses` figure stays honest on the absence path (D4).
+   */
+  readonly sharedPasses?: number;
   /**
    * Attachment URLs whose fetch failed (FR-004) — an input-quality note, never
    * a verification failure. Recorded loudly wherever the issue is reported.
@@ -948,7 +988,9 @@ async function runSingleIssueLane(
     if (!(error instanceof ConfidentialityGateError)) {
       throw error;
     }
-    return { branch, failure: error.message };
+    // WI-18 (D2, T2 quality fix): zero fix passes — the refusal precedes the
+    // fix loop, so the spend counters must not default to one.
+    return { branch, failure: error.message, fixPasses: 0 };
   }
   // Nesting guard: fix worktrees fork from main, so a committed
   // `.loop-harness` there pre-creates the copyToWorktree destination and
@@ -969,6 +1011,9 @@ async function runSingleIssueLane(
         "(.loop-harness/.loop-harness) and the promised attachment path would not exist. Remove it from " +
         "the target repo (git rm -r --cached .loop-harness, commit, push) and re-run.",
       failureKind: "harness",
+      // WI-18 (D2, T2 quality fix): zero fix passes — the guard precedes the
+      // fix loop ("no agent spend", above).
+      fixPasses: 0,
     };
   }
 
@@ -1052,6 +1097,9 @@ async function runSingleIssueLane(
       branch,
       failure,
       failureKind: "harness",
+      // WI-18 (D2, T2 quality fix): zero fix passes — the preflight runs
+      // before the fix agent ("no API spend on a stale profile", above).
+      fixPasses: 0,
       ...(preflightTeardown !== undefined ? { teardownFailure: preflightTeardown } : {}),
       ...escalation,
     };
@@ -1080,6 +1128,8 @@ async function runSingleIssueLane(
     // lane fails — gh-sourced issues only; a throw is captured, never retried,
     // and the fields below stand byte-identical (the recording rides beside).
     const escalation = await escalateOnFailure(input, deps, "fix-failed", reason);
+    // WI-18 (D2): the fix passes' token sum, whenever any attempt reported one.
+    const usage = issueUsage();
     return {
       branch,
       failure: reason,
@@ -1091,6 +1141,10 @@ async function runSingleIssueLane(
       // WI-17 (D5): the spend-ledger figure — only when more than one attempt
       // was spent, so single-attempt outcomes stay byte-identical.
       ...(attempt > 1 ? { attempts: attempt } : {}),
+      // WI-18 (D2, T2 quality fix): the explicit fix-pass count — spend
+      // accounting never infers it from `attempts` on real outcomes.
+      fixPasses: attempt,
+      ...(usage !== undefined ? { usage } : {}),
       ...escalation,
     };
   };
@@ -1104,6 +1158,12 @@ async function runSingleIssueLane(
   // precedence), and it rides whichever outcome the final attempt decided,
   // never displacing it.
   let sandboxTeardown: string | undefined;
+  // WI-18 (D2): per-attempt usage snapshots — each attempt's `fix.usage` rides
+  // here and is summed into the outcome's `usage` at every deciding return
+  // (`undefined` when NO attempt reported any — the D4 absence signal, never
+  // zeros).
+  const attemptUsages: { usage?: PassUsage }[] = [];
+  const issueUsage = (): PassUsage | undefined => sumPassUsage(attemptUsages);
   while (!passed) {
     attempt += 1;
     // WI-17 (the sandcastle-comparison gap, 2026-09-29): the run-level halt is
@@ -1116,12 +1176,17 @@ async function runSingleIssueLane(
       if (haltedBy !== undefined) {
         await deps.deleteBranch(input.repoDir, branch);
         const haltedTeardown = preflightTeardown ?? sandboxTeardown;
+        // WI-18 (D2): the attempts already spent keep their token sum.
+        const usage = issueUsage();
         return {
           branch,
           failure: `retry skipped — run halted by ${haltedBy.id}: ${haltedBy.reason}`,
           ...(attachmentFailures.length > 0 ? { attachmentFailures: [...attachmentFailures] } : {}),
           ...(haltedTeardown !== undefined ? { teardownFailure: haltedTeardown } : {}),
           ...(attempt - 1 > 1 ? { attempts: attempt - 1 } : {}),
+          // WI-18 (D2, T2 quality fix): only the attempts already SPENT count.
+          fixPasses: attempt - 1,
+          ...(usage !== undefined ? { usage } : {}),
         };
       }
     }
@@ -1148,6 +1213,8 @@ async function runSingleIssueLane(
       // never-commit-anything-under-`.loop-harness/` rule is the paired defense.
       ...(staged.length > 0 ? { copyToWorktree: [".loop-harness"] } : {}),
     });
+    // WI-18 (D2): the attempt's usage snapshot — summed at the deciding return.
+    attemptUsages.push({ usage: fix.usage });
 
     if (fix.commits.length === 0) {
       return fail(withAttemptCount("Fix run produced no commits — nothing to verify or PR.", attempt, maxAttempts));
@@ -1218,11 +1285,19 @@ async function runSingleIssueLane(
   // EARLY origin (it runs pre-merge), so its teardown failure folds into the
   // PR'd outcome below — first origin still wins (preflight, then the primary
   // verification sandbox), exactly the established precedence.
+  // WI-18 (D2): the fix passes' token sum, computed once beside the sibling
+  // arms' `const usage = issueUsage()` idiom (T2 quality nit).
+  const prUsage = issueUsage();
   let prOutcome: LoopOutcome = {
     branch,
     prUrl,
     // WI-17 (D5): the spend-ledger figure, only when the lane retried.
     ...(attempt > 1 ? { attempts: attempt } : {}),
+    // WI-18 (D2, T2 quality fix): the explicit fix-pass count, and the fix
+    // passes' token sum — present whenever reported, also on single-attempt
+    // runs (the count and the tokens are independent).
+    fixPasses: attempt,
+    ...(prUsage !== undefined ? { usage: prUsage } : {}),
     ...(attachmentFailures.length > 0 ? { attachmentFailures: [...attachmentFailures] } : {}),
     ...(earlyTeardown !== undefined ? { teardownFailure: earlyTeardown } : {}),
   };
@@ -1243,6 +1318,22 @@ async function runSingleIssueLane(
     // after the first harness-level outcome, in the SAME wave — not only in
     // later waves (the abort itself is still raised after the wave settles;
     // the sibling's open PR stands as the deliverable).
+    //
+    // WI-18 (D2): the lane's SHARED-pass spend — the merger and review passes
+    // run inside this chain, and their figures ride the outcome for the run's
+    // ledger. `withSpend` stamps the CURRENT figures onto any outcome the
+    // chain returns (the prOutcome-spread arms inherit them via the stamp, the
+    // canary/reverted fresh objects via their explicit field copies), and
+    // `sharedPasses` counts every pass ATTEMPTED — even one that reports no
+    // usage or throws — so the run's `modelPasses` stays honest on the D4
+    // absence path.
+    let sharedPasses = 0;
+    let sharedUsage: (readonly [string, PassUsage])[] = [];
+    const withSpend = (outcome: LoopOutcome): LoopOutcome => ({
+      ...outcome,
+      ...(sharedPasses > 0 ? { sharedPasses } : {}),
+      ...(sharedUsage.length > 0 ? { sharedUsage: [...sharedUsage] } : {}),
+    });
     const mergeChain = async (): Promise<LoopOutcome> => {
       // WI-13 T8 (FR-007/FR-008): the verified-merger gate, BEFORE the
       // pre-merge review — FR-008's order: the review must judge the
@@ -1255,6 +1346,15 @@ async function runSingleIssueLane(
       // too on this rare conflict path — accepted: a correct probe snapshot
       // over the sandbox's concurrency.
       const gate = await runVerifiedMergerGate(input, deps, prOutcome, prUrl);
+      // WI-18 (D2): a merger pass that RAN is shared spend — recorded before
+      // any branch on `gate`, so every arm below sees it (the run counted the
+      // attempt even when it threw or the resolution failed verification).
+      if (gate.mergerPassRan) {
+        sharedPasses += 1;
+        if (gate.usage !== undefined) {
+          sharedUsage = [...sharedUsage, ["merger", gate.usage] as const];
+        }
+      }
       if (!gate.proceed) {
         // WI-14 T3b (FR-005): the gate's non-proceed outcome is a PR-left
         // outcome — the fix IS verified and the PR stays open for a human — so
@@ -1262,7 +1362,7 @@ async function runSingleIssueLane(
         // gate's failure arms (probe throw, merger run throw, resolution failed
         // verification, push throw) funnels through this single return, so
         // this one call covers all four.
-        return { ...gate.outcome, ...(await clearHarnessFailedLabel(input, deps)) };
+        return withSpend({ ...gate.outcome, ...(await clearHarnessFailedLabel(input, deps)) });
       }
       if (gate.teardownFailure !== undefined && prOutcome.teardownFailure === undefined) {
         prOutcome = { ...prOutcome, teardownFailure: gate.teardownFailure };
@@ -1271,14 +1371,23 @@ async function runSingleIssueLane(
       // `runPreMergeReview`) — only an explicit approve reaches mergePr; any
       // other outcome returns a PR'd result carrying the skip reason.
       const review = await runPreMergeReview(input, deps, prUrl);
+      // WI-18 (D2): a review pass that RAN is shared spend — recorded before
+      // the verdict branch, so the skip arm carries its figure too (an
+      // uncertain/failed reviewer still spent the pass).
+      if (review.reviewPassRan) {
+        sharedPasses += 1;
+        if (review.usage !== undefined) {
+          sharedUsage = [...sharedUsage, ["review", review.usage] as const];
+        }
+      }
       if (!review.approved) {
         // WI-14 T3b (FR-005): a review-skipped PR is a verified-delivered PR —
         // it stays open for a human — so it is a removal site (T3 left it out).
-        return {
+        return withSpend({
           ...prOutcome,
           reviewSkip: review.reviewSkip,
           ...(await clearHarnessFailedLabel(input, deps)),
-        };
+        });
       }
       let mergeCommit: string;
       try {
@@ -1290,17 +1399,17 @@ async function runSingleIssueLane(
         const reason = error instanceof Error ? error.message : String(error);
         // WI-14 T3b (FR-005): a failed merge still leaves a verified, delivered
         // PR in hand — same removal site as the skips above.
-        return {
+        return withSpend({
           ...prOutcome,
           mergeFailure: `merge failed for ${prUrl}: ${reason}`,
           ...(await clearHarnessFailedLabel(input, deps)),
-        };
+        });
       }
 
       // WI-6 T4 (D2/D3, FR-005): the post-merge chain — sync main to the merged
       // base, run the canary suite on it, then close or revert per its verdict
       // (`runCanary`).
-      return runCanary(input, deps, prOutcome, prUrl, mergeCommit, attachmentFailures);
+      return runCanary(input, deps, withSpend(prOutcome), prUrl, mergeCommit, attachmentFailures);
     };
     return serializeGitChain(async () => {
       const haltedBy = haltSignal.halted();
@@ -1315,11 +1424,11 @@ async function runSingleIssueLane(
         // deliverable (the spec's stated end-state for these lanes), so its
         // issue clears the label too — the skip is about the merge, not about
         // the deliverable.
-        return {
+        return withSpend({
           ...prOutcome,
           reviewSkip: `merge skipped — run halted by ${haltedBy.id}: ${haltedBy.reason}`,
           ...(await clearHarnessFailedLabel(input, deps)),
-        };
+        });
       }
       const outcome = await mergeChain();
       if (harnessLevelFailure(outcome)) {
@@ -1479,8 +1588,15 @@ async function runVerifiedMergerGate(
   prOutcome: LoopOutcome,
   prUrl: string,
 ): Promise<
-  | { readonly proceed: true; readonly teardownFailure?: string }
-  | { readonly proceed: false; readonly outcome: LoopOutcome }
+  // WI-18 (D2): both arms carry the merger pass's spend facts — `mergerPassRan`
+  // on every arm (counted even when the run threw), `usage` only when the
+  // provider reported one. Parenthesized so the intersection binds to BOTH
+  // union members, not just the last.
+  (
+    | { readonly proceed: true; readonly teardownFailure?: string }
+    | { readonly proceed: false; readonly outcome: LoopOutcome }
+  ) &
+    { readonly mergerPassRan: boolean; readonly usage?: PassUsage }
 > {
   const branch = fixBranch(input.issue);
   // mainRef is main BY NAME, resolved by git at merger time — inside the
@@ -1496,18 +1612,25 @@ async function runVerifiedMergerGate(
     const reason = error instanceof Error ? error.message : String(error);
     return {
       proceed: false,
+      mergerPassRan: false,
       outcome: { ...prOutcome, mergeFailure: `merger conflict probe failed for ${prUrl}: ${reason}` },
     };
   }
   if (!conflicts) {
-    return { proceed: true };
+    return { proceed: true, mergerPassRan: false };
   }
+  // WI-18 (D2): the pass is ATTEMPTED spend — `mergerPassRan` latches true
+  // before the await so a throwing run still counts; `mergerUsage` rides the
+  // return of every downstream arm (re-verification failure, push failure,
+  // success), never short-circuiting the FR-008 re-verification flow.
+  const mergerPassRan = true;
+  let mergerUsage: PassUsage | undefined;
   try {
     const mergerPrompt = buildMergerPrompt(input.issue, input.profile, branch, mainRef);
     // The prompt reaches a third-party API — guard it before the call, like
     // every other emitted string.
     assertNoSecrets([mergerPrompt], deps.env);
-    await deps.runMerger({
+    const { usage } = await deps.runMerger({
       cwd: input.repoDir,
       prompt: mergerPrompt,
       imageName: input.imageName,
@@ -1515,12 +1638,16 @@ async function runVerifiedMergerGate(
       branch,
       mainRef,
     });
+    if (usage !== undefined) {
+      mergerUsage = usage;
+    }
   } catch (error) {
     // FR-007 boundary: a failed merger run leaves the PR open for a human
     // with the failure recorded — the existing merge-failure posture.
     const reason = error instanceof Error ? error.message : String(error);
     return {
       proceed: false,
+      mergerPassRan,
       outcome: { ...prOutcome, mergeFailure: `merger run failed for ${prUrl}: ${reason}` },
     };
   }
@@ -1530,6 +1657,8 @@ async function runVerifiedMergerGate(
   if (!verdict.passed) {
     return {
       proceed: false,
+      mergerPassRan,
+      ...(mergerUsage !== undefined ? { usage: mergerUsage } : {}),
       outcome: {
         ...prOutcome,
         mergeFailure: `merger resolution failed verification: ${verdict.failure}`,
@@ -1553,10 +1682,17 @@ async function runVerifiedMergerGate(
     const reason = error instanceof Error ? error.message : String(error);
     return {
       proceed: false,
+      mergerPassRan,
+      ...(mergerUsage !== undefined ? { usage: mergerUsage } : {}),
       outcome: { ...prOutcome, mergeFailure: `merger resolution push failed for ${prUrl}: ${reason}` },
     };
   }
-  return { proceed: true, ...(teardownFailure !== undefined ? { teardownFailure } : {}) };
+  return {
+    proceed: true,
+    mergerPassRan,
+    ...(mergerUsage !== undefined ? { usage: mergerUsage } : {}),
+    ...(teardownFailure !== undefined ? { teardownFailure } : {}),
+  };
 }
 
 /**
@@ -1573,10 +1709,21 @@ async function runPreMergeReview(
   input: SingleIssueInput,
   deps: LoopDeps,
   prUrl: string,
-): Promise<{ readonly approved: true } | { readonly approved: false; readonly reviewSkip: string }> {
+): Promise<
+  // WI-18 (D2): both arms carry the review pass's spend facts —
+  // `reviewPassRan` true only once the harness actually called `runReview`
+  // (a diff/prompt failure before the call spent nothing), `usage` only when
+  // the provider reported one.
+  (
+    | { readonly approved: true }
+    | { readonly approved: false; readonly reviewSkip: string }
+  ) & { readonly reviewPassRan: boolean; readonly usage?: PassUsage }
+> {
   const branch = fixBranch(input.issue);
   let verdict: ReviewVerdict;
   let reviewNote: string | undefined;
+  let reviewPassRan = false;
+  let reviewUsage: PassUsage | undefined;
   try {
     const diff = await deps.fixDiff(input.repoDir, branch);
     const reviewPrompt = buildReviewPrompt(input.issue, diff);
@@ -1584,13 +1731,17 @@ async function runPreMergeReview(
     // every other emitted string.
     assertNoSecrets([reviewPrompt], deps.env);
     try {
-      const stdout = await deps.runReview({
+      reviewPassRan = true;
+      const { stdout, usage } = await deps.runReview({
         cwd: input.repoDir,
         prompt: reviewPrompt,
         imageName: input.imageName,
         agent: input.agent,
         diff,
       });
+      if (usage !== undefined) {
+        reviewUsage = usage;
+      }
       verdict = parseReviewOutput(stdout);
     } finally {
       // Runs on the throw path too, so a failed pass never leaks the branch.
@@ -1617,9 +1768,14 @@ async function runPreMergeReview(
     } catch (error) {
       commentNote = ` (skip comment FAILED: ${error instanceof Error ? error.message : String(error)})`;
     }
-    return { approved: false, reviewSkip: `${reason}${commentNote}` };
+    return {
+      approved: false,
+      reviewPassRan,
+      ...(reviewUsage !== undefined ? { usage: reviewUsage } : {}),
+      reviewSkip: `${reason}${commentNote}`,
+    };
   }
-  return { approved: true };
+  return { approved: true, reviewPassRan, ...(reviewUsage !== undefined ? { usage: reviewUsage } : {}) };
 }
 
 /**
@@ -1689,6 +1845,12 @@ async function runCanary(
       // WI-17 (D5): the spend-ledger figure rides the fresh object too — the
       // uncanaried verdict stands untouched beside it.
       ...(prOutcome.attempts !== undefined ? { attempts: prOutcome.attempts } : {}),
+      // WI-18 (D2): the same for the spend facts — fix-pass count, fix-attempt
+      // tokens, and the shared passes (review/merger) this lane already ran.
+      ...(prOutcome.fixPasses !== undefined ? { fixPasses: prOutcome.fixPasses } : {}),
+      ...(prOutcome.usage !== undefined ? { usage: prOutcome.usage } : {}),
+      ...(prOutcome.sharedUsage !== undefined ? { sharedUsage: prOutcome.sharedUsage } : {}),
+      ...(prOutcome.sharedPasses !== undefined ? { sharedPasses: prOutcome.sharedPasses } : {}),
       uncanaried,
     };
   }
@@ -1842,6 +2004,12 @@ async function runCanary(
     // WI-17 (D5): the spend-ledger figure rides the fresh object too — the
     // reverted verdict stands untouched beside it.
     ...(prOutcome.attempts !== undefined ? { attempts: prOutcome.attempts } : {}),
+    // WI-18 (D2): the same for the spend facts — fix-pass count, fix-attempt
+    // tokens, and the shared passes (review/merger) this lane already ran.
+    ...(prOutcome.fixPasses !== undefined ? { fixPasses: prOutcome.fixPasses } : {}),
+    ...(prOutcome.usage !== undefined ? { usage: prOutcome.usage } : {}),
+    ...(prOutcome.sharedUsage !== undefined ? { sharedUsage: prOutcome.sharedUsage } : {}),
+    ...(prOutcome.sharedPasses !== undefined ? { sharedPasses: prOutcome.sharedPasses } : {}),
     reverted: {
       id: input.issue.id,
       prUrl,
@@ -1864,7 +2032,7 @@ async function runCanary(
 
 /** Everything the queue runner needs beyond the single-issue loop. */
 export type QueueLoopDeps = LoopDeps & QueueDeps & {
-  runPlan(input: PlanRunInput): Promise<string>;
+  runPlan(input: PlanRunInput): Promise<{ stdout: string; usage?: PassUsage }>;
 };
 
 export interface QueueRunInput {
@@ -1981,6 +2149,53 @@ export interface QueueSummary {
    * typechecking. Single-attempt runs render no figure, by design.
    */
   readonly attempts?: [string, number][];
+  /**
+   * WI-18 (D2/D3, T2): the run's spend — model-pass COUNT always, token
+   * figures only when a provider reported any (`usageAvailable` states the
+   * absence honestly, never zeros — D4). Always populated by `runQueue`'s
+   * snapshot; optional only so pre-WI-18 hand-built literals keep
+   * typechecking.
+   */
+  readonly spend?: RunSpend;
+}
+
+/**
+ * WI-18 (D2): the run-level spend ledger. `modelPasses` counts every model
+ * pass the run ATTEMPTED — fix passes (per-lane `fixPasses`, falling back to
+ * `attempts ?? 1` only for pre-WI-18 hand-built literals), shared passes
+ * (pre-merge review, merger), and planner passes (initial + re-plans) —
+ * including passes whose run threw, and never a pass that never started (a
+ * pre-fix abort lane carries `fixPasses: 0`). `total`/`perIssue`/`shared`
+ * carry the token figures providers actually reported; all stay absent when
+ * none did (`usageAvailable: false`, the D4 absence signal).
+ */
+export interface RunSpend {
+  readonly modelPasses: number;
+  readonly usageAvailable: boolean;
+  /** Element-wise sum of every reported usage — absent when none was. */
+  readonly total?: PassUsage;
+  /** [id, usage] per issue whose fix attempts reported tokens. */
+  readonly perIssue: [string, PassUsage][];
+  /** [name, usage] per shared pass kind (`plan`, `review`, `merger`), summed. */
+  readonly shared: [string, PassUsage][];
+}
+
+/** WI-18 (D1): the plan-pinned token rendering — raw integers, no separators. */
+export function formatTokens(usage: PassUsage): string {
+  return (
+    `${usage.inputTokens} in / ${usage.outputTokens} out / ` +
+    `${usage.cacheCreationInputTokens} cache-write / ${usage.cacheReadInputTokens} cache-read`
+  );
+}
+
+/** WI-18 (D2): element-wise sum of two reported usages. */
+function addPassUsage(a: PassUsage, b: PassUsage): PassUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    cacheCreationInputTokens: a.cacheCreationInputTokens + b.cacheCreationInputTokens,
+    cacheReadInputTokens: a.cacheReadInputTokens + b.cacheReadInputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+  };
 }
 
 /**
@@ -2023,6 +2238,40 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
       });
   const split = await splitQueue(deps, input.repoDir, issues);
 
+  // WI-18 (D2, T2): the run's spend ledger state. Fix passes count per settled
+  // lane (`outcome.attempts ?? 1`), shared passes (review/merger) ride the
+  // outcome's `sharedPasses`, and planner passes are counted BEFORE each
+  // `runPlan` await so a throwing plan run still counts as attempted spend.
+  // Token figures accumulate alongside and stay absent (never zeros) when no
+  // provider reported any (D4).
+  let planPasses = 0;
+  let planUsage: PassUsage | undefined;
+  let fixPassTotal = 0;
+  let fixUsageTotal: PassUsage | undefined;
+  const perIssueUsage: [string, PassUsage][] = [];
+  let sharedPassTotal = 0;
+  const sharedUsageByName = new Map<string, PassUsage>();
+  const snapshotSpend = (): RunSpend => {
+    const total = [planUsage, fixUsageTotal, ...sharedUsageByName.values()]
+      .filter((usage): usage is PassUsage => usage !== undefined)
+      .reduce<PassUsage | undefined>(
+        (sum, usage) => (sum === undefined ? usage : addPassUsage(sum, usage)),
+        undefined,
+      );
+    return {
+      modelPasses: fixPassTotal + sharedPassTotal + planPasses,
+      usageAvailable: total !== undefined,
+      ...(total !== undefined ? { total } : {}),
+      perIssue: [...perIssueUsage],
+      // The planner's entry leads the shared list (`plan`, then review/merger
+      // as lanes ran them) — D2 attributes re-plans under the same `plan` name.
+      shared: [
+        ...(planUsage !== undefined ? [["plan", planUsage] as [string, PassUsage]] : []),
+        ...sharedUsageByName.entries(),
+      ],
+    };
+  };
+
   // WI-13 FR-001: the planner is always on when more than one issue is
   // eligible — the dependency graph it returns is what lets independent fixes
   // run in parallel. One eligible issue can block nobody and outrank nobody,
@@ -2034,12 +2283,17 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
     const prompt = buildPlanPrompt(split.eligible);
     assertNoSecrets([prompt], deps.env);
     try {
-      const stdout = await deps.runPlan({
+      // WI-18 (D2): counted before the await — a throwing plan run still spent.
+      planPasses += 1;
+      const { stdout, usage } = await deps.runPlan({
         cwd: input.repoDir,
         prompt,
         imageName: input.imageName,
         agent: input.agent,
       });
+      if (usage !== undefined) {
+        planUsage = planUsage === undefined ? usage : addPassUsage(planUsage, usage);
+      }
       plan = parsePlanOutput(stdout, split.eligible.map((i) => i.id));
     } catch (error) {
       // The planning pass is an optimization, never a gate: a failed plan run
@@ -2104,6 +2358,7 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
     reverted: [...reverted],
     uncanariedMerges: [...uncanariedMerges],
     attempts: [...attempts],
+    spend: snapshotSpend(),
     ...(input.sourceName !== undefined ? { source: input.sourceName } : {}),
   });
 
@@ -2268,6 +2523,25 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
       if (outcome.attempts !== undefined) {
         attempts.push([issue.id, outcome.attempts]);
       }
+      // WI-18 (D2): the spend ledger, collected for every settled lane — fix
+      // passes and per-issue tokens from the lane's own attempts, shared
+      // passes (review/merger) merged by name across lanes. Reverted and
+      // uncanaried lanes carry the same fields (their fresh objects copy them),
+      // so their spend is not silently dropped. T2 quality fix: `fixPasses`
+      // first — a pre-fix abort lane carries an explicit 0, where the old
+      // `attempts ?? 1` default billed a phantom pass (the fallbacks remain
+      // only for pre-WI-18 hand-built literals).
+      fixPassTotal += outcome.fixPasses ?? outcome.attempts ?? 1;
+      if (outcome.usage !== undefined) {
+        perIssueUsage.push([issue.id, outcome.usage]);
+        fixUsageTotal =
+          fixUsageTotal === undefined ? outcome.usage : addPassUsage(fixUsageTotal, outcome.usage);
+      }
+      sharedPassTotal += outcome.sharedPasses ?? 0;
+      for (const [name, usage] of outcome.sharedUsage ?? []) {
+        const prior = sharedUsageByName.get(name);
+        sharedUsageByName.set(name, prior === undefined ? usage : addPassUsage(prior, usage));
+      }
       if (outcome.prUrl) {
         fixed.push(issue.id);
         prUrls.push(outcome.prUrl);
@@ -2372,12 +2646,17 @@ export async function runQueue(input: QueueRunInput, deps: QueueLoopDeps): Promi
         let rePlanError: string | undefined;
         let rePlan: PlanValue | undefined;
         try {
-          const stdout = await deps.runPlan({
+          // WI-18 (D2): counted before the await — a throwing re-plan still spent.
+          planPasses += 1;
+          const { stdout, usage } = await deps.runPlan({
             cwd: input.repoDir,
             prompt,
             imageName: input.imageName,
             agent: input.agent,
           });
+          if (usage !== undefined) {
+            planUsage = planUsage === undefined ? usage : addPassUsage(planUsage, usage);
+          }
           // T6b FIX 2 (quality Important — the re-plan validation split):
           // `priority` is validated against the ASKED set — the re-plan
           // prompt (`buildPlanPrompt(remaining)`, just above) lists only the
@@ -2473,6 +2752,19 @@ export function formatSummary(summary: QueueSummary): string {
     // exists only then). Single-attempt runs render no figure, and the PR body
     // stays attempt-silent by design.
     ...(summary.attempts ?? []).map(([id, n]) => `${id}: attempts: ${n}`),
+    // WI-18 (D2/D3, T2): the run's spend — the model-pass count always, the
+    // token figures per issue and per shared pass only when a provider
+    // reported any, and the absence stated in one honest line otherwise (D4 —
+    // never zeros). The PR body stays spend-silent (D5).
+    ...(summary.spend === undefined
+      ? []
+      : [
+          ...summary.spend.perIssue.map(([id, usage]) => `${id}: tokens: ${formatTokens(usage)}`),
+          ...summary.spend.shared.map(([name, usage]) => `${name} tokens: ${formatTokens(usage)}`),
+          summary.spend.usageAvailable && summary.spend.total !== undefined
+            ? `spend: ${summary.spend.modelPasses} model passes, tokens: ${formatTokens(summary.spend.total)}`
+            : `spend: ${summary.spend.modelPasses} model passes, token usage not available for this provider`,
+        ]),
     ...summary.prUrls.map((url) => `PR: ${url}`),
     // A mergedPrs entry exists only on a canary-green merge (red reverts and
     // never reaches this list), so the canary result is pinned here (T4
@@ -2502,6 +2794,107 @@ export function formatSummary(summary: QueueSummary): string {
     ...summary.attachmentFailures.map(([id, url]) => `ATTACHMENT FAILED ${id}: ${url}`),
     ...summary.notAdmitted.map(([id, reason]) => `NOT ADMITTED ${id}: ${reason}`),
   ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// WI-18 T3: last-run.json — the durable run report, written to the target
+// repo's `.loop-harness/`, overwritten per run, untracked by its own ensured
+// `.gitignore` line. Same honest-absence posture as the console report (D4:
+// `usageAvailable: false` with NO `tokens` key, never zeros).
+// ---------------------------------------------------------------------------
+
+/**
+ * WI-18 (T3): the queue run report as JSON — 2-space indent, keys in the
+ * plan-pinned order: `date`, `usageAvailable`, `modelPasses`, `tokens` (only
+ * when available), the attempted/fixed/failed COUNTS (the ids live in the
+ * console report and `perIssue`), `prUrls`, `perIssue` (`[{ id, tokens }]`),
+ * `sharedPasses` (`[{ pass, tokens }]`). A hand-built summary without `spend`
+ * renders the D4 absence arm (`usageAvailable: false`, no `tokens` key).
+ */
+export function buildRunReport(summary: QueueSummary, isoDate: string): string {
+  const spend = summary.spend;
+  return JSON.stringify(
+    {
+      date: isoDate,
+      usageAvailable: spend?.usageAvailable ?? false,
+      modelPasses: spend?.modelPasses ?? 0,
+      ...(spend?.usageAvailable && spend.total !== undefined ? { tokens: spend.total } : {}),
+      attempted: summary.attempted.length,
+      fixed: summary.fixed.length,
+      failed: summary.failed.length,
+      prUrls: [...summary.prUrls],
+      perIssue: (spend?.perIssue ?? []).map(([id, tokens]) => ({ id, tokens })),
+      sharedPasses: (spend?.shared ?? []).map(([pass, tokens]) => ({ pass, tokens })),
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * WI-18 (T3): the single-issue run report as JSON — `date`, `id`, `outcome`
+ * (`fixed` when a PR landed with no failure, else `failed`), then the same
+ * token keys as the queue variant. The pass count is the lane's fix passes
+ * only (`fixPasses ?? attempts ?? 1`); shared passes and the planner belong
+ * to the queue report.
+ */
+export function buildSingleIssueReport(id: string, outcome: LoopOutcome, isoDate: string): string {
+  return JSON.stringify(
+    {
+      date: isoDate,
+      id,
+      outcome: outcome.prUrl !== undefined && outcome.failure === undefined ? "fixed" : "failed",
+      usageAvailable: outcome.usage !== undefined,
+      modelPasses: outcome.fixPasses ?? outcome.attempts ?? 1,
+      ...(outcome.usage !== undefined ? { tokens: outcome.usage } : {}),
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * WI-18 (T3): the real durable-report writer — mkdir `.loop-harness`, ensure
+ * its `.gitignore` ignores `last-run.json` (create the file with exactly that
+ * line when absent; APPEND the line when a `.gitignore` exists without it —
+ * the existing content is never rewritten; leave the file untouched when the
+ * line is already there), then overwrite `last-run.json` with this run's
+ * report.
+ */
+export function writeRunReportFile(repoDir: string, json: string): void {
+  const dir = join(repoDir, ".loop-harness");
+  mkdirSync(dir, { recursive: true });
+  const gitignorePath = join(dir, ".gitignore");
+  if (!existsSync(gitignorePath)) {
+    writeFileSync(gitignorePath, "last-run.json\n");
+  } else {
+    const existing = readFileSync(gitignorePath, "utf8");
+    if (!existing.split("\n").includes("last-run.json")) {
+      appendFileSync(gitignorePath, `${existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""}last-run.json\n`);
+    }
+  }
+  writeFileSync(join(dir, "last-run.json"), json);
+}
+
+/**
+ * WI-18 (T3): the best-effort emission wrapper `main()` routes every report
+ * write through — the WI-11 recording posture: a throw is captured, guarded
+ * through `assertNoSecrets`, printed as `RUN REPORT WRITE FAILED: <message>`
+ * on console.error, and NEVER changes the exit code or displaces the verdict
+ * the run already earned.
+ */
+export function writeRunReportBestEffort(
+  repoDir: string,
+  json: string,
+  deps: Pick<LoopDeps, "env" | "writeRunReport">,
+): void {
+  try {
+    deps.writeRunReport(repoDir, json);
+  } catch (error) {
+    const message = `RUN REPORT WRITE FAILED: ${error instanceof Error ? error.message : String(error)}`;
+    assertNoSecrets([message], deps.env);
+    console.error(message);
+  }
 }
 
 /**
@@ -2679,6 +3072,18 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
     if (result.outcome.attempts !== undefined) {
       stdout.push(`attempts: ${result.outcome.attempts}`);
     }
+    // WI-18 (D2/D3, T2): the single-issue spend sentence — ALWAYS rendered,
+    // even on a one-attempt no-usage run (the honest D4 absence arm). The
+    // figure counts this issue's fix attempts only (`fixPasses` first — a
+    // pre-fix abort lane carries an explicit 0, where `attempts ?? 1` billed a
+    // phantom pass); shared passes (review, merger) and the planner belong to
+    // the run-level ledger in `formatSummary`. The PR body stays spend-silent
+    // (D5).
+    stdout.push(
+      result.outcome.usage !== undefined
+        ? `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, tokens: ${formatTokens(result.outcome.usage)}`
+        : `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, token usage not available for this provider`,
+    );
     // WI-6 (FR-008): a failed close is bookkeeping noise on a merged outcome
     // — loud (guarded, stderr), never fatal.
     if (result.outcome.closeFailure !== undefined) {
@@ -2714,6 +3119,16 @@ export function formatSingleIssueResult(result: OverrideOutcome): {
   if (result.outcome.attempts !== undefined) {
     stderr.push(`attempts: ${result.outcome.attempts}`);
   }
+  // WI-18 (D2/D3, T2): same ALWAYS-rendered spend sentence on the failure arm
+  // (D4's absence arm is the scripted-agent/queue-harness default: no provider
+  // reported tokens). Fix attempts only, `fixPasses` first (pre-fix aborts
+  // carry an explicit 0) — shared passes and the planner are the run summary's
+  // figures.
+  stderr.push(
+    result.outcome.usage !== undefined
+      ? `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, tokens: ${formatTokens(result.outcome.usage)}`
+      : `spend: ${result.outcome.fixPasses ?? result.outcome.attempts ?? 1} model passes, token usage not available for this provider`,
+  );
   // WI-8 (FR-002): the teardown line rides after the failure line — recorded,
   // never deciding the outcome that was already earned.
   if (result.outcome.teardownFailure !== undefined) {
@@ -2995,10 +3410,17 @@ async function main(): Promise<void> {
     async pushBranch(repoDir: string, branch: string) {
       execFileSync("git", ["push", "origin", branch], { cwd: repoDir, stdio: "inherit" });
     },
+    // WI-18 (T3): the durable run report — the real fs writer behind the
+    // `writeRunReport` seam (see `writeRunReportFile`).
+    writeRunReport(repoDir, json) {
+      writeRunReportFile(repoDir, json);
+    },
   };
 
   // Real QueueDeps wiring: gh + git subprocesses against the target clone.
-  const queueDeps: QueueDeps & { runPlan(input: PlanRunInput): Promise<string> } = {
+  const queueDeps: QueueDeps & {
+    runPlan(input: PlanRunInput): Promise<{ stdout: string; usage?: PassUsage }>;
+  } = {
     ghJson: realGhJson,
     // WI-7 (FR-001): refresh the clone's remote-tracking refs before the dedup
     // reads them — the revert guard and branch listings describe origin's now,
@@ -3079,6 +3501,17 @@ async function main(): Promise<void> {
     if (report.exitCode === 1) {
       process.exitCode = 1;
     }
+    // WI-18 (T3): the durable report, AFTER the console report and always
+    // best-effort — a failed write is recorded on console.error, never fatal.
+    // Only a run outcome has spend figures to record; the skipped kinds are
+    // dedup no-ops that spent nothing.
+    if (result.kind === "run") {
+      writeRunReportBestEffort(
+        repoDir,
+        buildSingleIssueReport(issue.id, result.outcome, new Date().toISOString()),
+        deps,
+      );
+    }
     return;
   }
 
@@ -3089,6 +3522,13 @@ async function main(): Promise<void> {
     const text = formatSummary(summary);
     assertNoSecrets(abort !== undefined ? [text, abort] : [text], guardEnv);
     console.log(text);
+    // WI-18 (T3): the durable report on BOTH arms — a run that earned PRs
+    // before aborting still spent. AFTER the console report, best-effort.
+    writeRunReportBestEffort(
+      repoDir,
+      buildRunReport(summary, new Date().toISOString()),
+      deps,
+    );
     if (abort !== undefined) {
       console.error(abort);
       process.exitCode = 1;

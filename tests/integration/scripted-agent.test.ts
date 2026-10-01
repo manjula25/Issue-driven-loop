@@ -114,7 +114,7 @@ describe("the scripted agent (WI-16 T2)", () => {
     // A synthetic diff keeps this test independent of the fix test's branches:
     // the review contract is the prompt shape plus the verdict block, and the
     // scripted review pass judges nothing.
-    const stdout = await runReview({
+    const { stdout } = await runReview({
       cwd: scratch,
       prompt: buildReviewPrompt(issue, "<synthetic diff>"),
       imageName: TEST_IMAGE,
